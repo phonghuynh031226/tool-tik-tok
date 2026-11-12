@@ -1,0 +1,16 @@
+.venv/
+.cache/
+.tmp/
+downloads/
+data/
+logs/
+build/
+dist/
+bin/*.exe
+client_secret*.json
+token*
+*.db
+*.db-*
+__pycache__/
+*.py[cod]
+.pytest_cache/
