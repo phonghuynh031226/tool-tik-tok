@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import sqlite3
+import re
 
 from app.security.redaction import redact_text
 
-CURRENT_VERSION = 2
+CURRENT_VERSION = 3
 
 
 class MigrationError(RuntimeError):
@@ -51,7 +52,49 @@ def _version_two(db: sqlite3.Connection) -> None:
                 db.execute(f'UPDATE jobs SET {column} = ? WHERE id = ?', (clean, row[0]))
 
 
+def _version_three(db: sqlite3.Connection) -> None:
+    columns = {row[1] for row in db.execute('PRAGMA table_info(jobs)')}
+    for name in ('scheduled_at', 'channel_id'):
+        if name not in columns:
+            db.execute(f'ALTER TABLE jobs ADD COLUMN {name} TEXT')
+    # Rebuild only the status CHECK; preserve legacy/custom columns and indexes.
+    sql = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='jobs'").fetchone()[0]
+    pattern = r'(CHECK\s*\(\s*processing_status\s+IN\s*\()([^)]*)(\)\s*\))'
+    def extend(match):
+        return match[0] if "'SCHEDULED'" in match[2] else match[1] + match[2] + ",'SCHEDULED'" + match[3]
+    upgraded, count = re.subn(pattern, extend, sql, flags=re.IGNORECASE)
+    if count > 1 or (count == 0 and re.search(r'CHECK\s*\(\s*processing_status', sql, re.IGNORECASE)):
+        raise MigrationError('Không nhận diện được ràng buộc trạng thái; dữ liệu được giữ nguyên.')
+    if upgraded != sql:
+        objects = db.execute("SELECT sql FROM sqlite_master WHERE tbl_name='jobs' AND type IN ('index','trigger') AND sql IS NOT NULL").fetchall()
+        sequence = db.execute("SELECT seq FROM sqlite_sequence WHERE name='jobs'").fetchone()
+        create = re.sub(r'CREATE\s+TABLE\s+(?:"jobs"|\[jobs\]|`jobs`|jobs)', 'CREATE TABLE jobs_v3', upgraded, count=1, flags=re.IGNORECASE)
+        db.execute(create)
+        names = ', '.join('"' + row[1].replace('"', '""') + '"' for row in db.execute('PRAGMA table_info(jobs)'))
+        db.execute(f'INSERT INTO jobs_v3 ({names}) SELECT {names} FROM jobs')
+        db.execute('DROP TABLE jobs')
+        db.execute('ALTER TABLE jobs_v3 RENAME TO jobs')
+        for row in objects:
+            db.execute(row[0])
+        if sequence:
+            db.execute("UPDATE sqlite_sequence SET seq = max(seq, ?) WHERE name='jobs'", (sequence[0],))
+            if not db.execute("SELECT 1 FROM sqlite_sequence WHERE name='jobs'").fetchone():
+                db.execute("INSERT INTO sqlite_sequence(name,seq) VALUES('jobs',?)", (sequence[0],))
+    db.execute('''CREATE TABLE IF NOT EXISTS channel_stats (
+        channel_id TEXT PRIMARY KEY, subscribers INTEGER, total_views INTEGER NOT NULL DEFAULT 0,
+        video_count INTEGER NOT NULL DEFAULT 0, subscribers_hidden INTEGER NOT NULL DEFAULT 0,
+        fetched_at TEXT)''')
+    db.execute('''CREATE TABLE IF NOT EXISTS video_stats (
+        channel_id TEXT NOT NULL, video_id TEXT NOT NULL, title TEXT NOT NULL DEFAULT '',
+        thumbnail_url TEXT, published_at TEXT, scheduled_at TEXT,
+        privacy_status TEXT NOT NULL DEFAULT 'private', duration_seconds REAL NOT NULL DEFAULT 0,
+        views INTEGER NOT NULL DEFAULT 0, likes INTEGER, comments INTEGER, fetched_at TEXT,
+        PRIMARY KEY(channel_id, video_id))''')
+
+
 def migrate(db: sqlite3.Connection) -> None:
+    foreign_keys = db.execute('PRAGMA foreign_keys').fetchone()[0]
+    db.execute('PRAGMA foreign_keys = OFF')
     db.execute('BEGIN IMMEDIATE')
     try:
         db.execute('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)')
@@ -63,11 +106,15 @@ def migrate(db: sqlite3.Connection) -> None:
             raise MigrationError('Cơ sở dữ liệu dùng phiên bản không được hỗ trợ; dữ liệu được giữ nguyên.')
         if not versions:
             db.execute('INSERT INTO schema_version(version) VALUES (?)', (0,))
-        for number, upgrade in ((1, _version_one), (2, _version_two)):
+        for number, upgrade in ((1, _version_one), (2, _version_two), (3, _version_three)):
             if current < number:
                 upgrade(db)
                 db.execute('UPDATE schema_version SET version = ?', (number,))
+        if db.execute('PRAGMA foreign_key_check').fetchone():
+            raise MigrationError('Ràng buộc dữ liệu không hợp lệ; hủy nâng cấp.')
         db.execute('COMMIT')
     except BaseException:
         db.execute('ROLLBACK')
         raise
+    finally:
+        db.execute(f'PRAGMA foreign_keys = {int(foreign_keys)}')

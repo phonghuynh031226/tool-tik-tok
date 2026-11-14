@@ -25,8 +25,8 @@ def test_job_status_serialization():
     (VideoMeta, 'video_id url title description author thumbnail_url duration width height'),
     (DownloadResult, 'path size sha256 duration width height'),
     (GeneratedContent, 'title description hashtags tags'),
-    (UploadRequest, 'path title description tags privacy made_for_kids category_id default_language rights_confirmed'),
-    (UploadResult, 'video_id url channel_id'),
+    (UploadRequest, 'path title description tags privacy made_for_kids category_id default_language rights_confirmed publish_at channel_id'),
+    (UploadResult, 'video_id url channel_id status'),
     (ChannelInfo, 'id title'),
 ])
 def test_frozen_contract_field_layout(model, names):

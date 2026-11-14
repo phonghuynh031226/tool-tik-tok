@@ -38,3 +38,16 @@ class NetworkError(AppError):
 
 class ContentInvalid(AppError):
     user_message = 'Nội dung chưa hợp lệ hoặc chưa được xác nhận. Vui lòng kiểm tra lại.'
+
+
+class AccountNotFound(AppError):
+    user_message = 'Không tìm thấy tài khoản YouTube đã chọn. Vui lòng chọn lại tài khoản.'
+
+
+class ScheduleInPast(AppError):
+    user_message = 'Thời điểm công khai phải nằm trong tương lai. Vui lòng chọn lại lịch hẹn.'
+
+
+class StatsUnavailable(AppError):
+    user_message = 'Chưa lấy được thống kê. Vui lòng thử làm mới hoặc kết nối lại tài khoản.'
+    retryable = True

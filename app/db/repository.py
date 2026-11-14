@@ -33,7 +33,8 @@ from .migrations import migrate
 JOB_COLUMNS = tuple('''id tiktok_url tiktok_video_id original_title original_description author local_mp4_path
     sha256 duration resolution file_size youtube_title youtube_description hashtags tags youtube_video_id
     youtube_url youtube_channel_id privacy_status made_for_kids category_id gemini_model prompt_version
-    rights_confirmed upload_session_uri processing_status error_message retry_count created_at uploaded_at'''.split())
+    rights_confirmed upload_session_uri processing_status error_message retry_count created_at uploaded_at
+    scheduled_at channel_id'''.split())
 _ALIASES = {'video_id': 'tiktok_video_id', 'url': 'tiktok_url', 'title': 'original_title',
             'description': 'original_description', 'status': 'processing_status'}
 _BOOLS = {'made_for_kids', 'rights_confirmed'}
@@ -124,6 +125,11 @@ class SQLiteHistoryRepository:
                 raise ValueError('Thông tin bí mật hoặc trường nội bộ không được lưu vào lịch sử.')
             if isinstance(value, Path):
                 value = str(value)
+            if key == 'scheduled_at' and value is not None:
+                stamp = datetime.fromisoformat(value) if isinstance(value, str) else value
+                if not isinstance(stamp, datetime) or stamp.tzinfo is None or stamp.utcoffset() is None:
+                    raise ValueError('Thời điểm hẹn phải có múi giờ.')
+                value = stamp.isoformat()
             value = nonsecret_value(value)
             if key not in JOB_COLUMNS:
                 extras[key] = value
@@ -317,6 +323,12 @@ class SQLiteHistoryRepository:
         with self._lock:
             rows = self._db.execute('''SELECT * FROM jobs WHERE (? IS NULL OR processing_status = ?)
                 ORDER BY id DESC LIMIT ? OFFSET ?''', (filter_status, filter_status, limit, offset)).fetchall()
+            return [self._decode(row) for row in rows]
+
+    def list_scheduled(self) -> list[HistoryRecord]:
+        with self._lock:
+            rows = self._db.execute('SELECT * FROM jobs WHERE processing_status = ? ORDER BY id DESC',
+                                    (JobStatus.SCHEDULED.value,)).fetchall()
             return [self._decode(row) for row in rows]
 
     def export_csv(self, path: Path | None = None) -> Path:

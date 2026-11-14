@@ -11,6 +11,8 @@ No implementation, credentials, external SDK objects, or Qt types belong here.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Literal
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, runtime_checkable
@@ -30,6 +32,7 @@ class JobStatus(str, Enum):
     UPLOADED = 'UPLOADED'
     FAILED = 'FAILED'
     CANCELLED = 'CANCELLED'
+    SCHEDULED = 'SCHEDULED'
 
 
 @dataclass(slots=True)
@@ -74,6 +77,8 @@ class UploadRequest:
     category_id: str = '22'
     default_language: str = 'vi'
     rights_confirmed: bool = False  # UI must separately confirm the upload action.
+    publish_at: datetime | None = None  # Must be timezone-aware when supplied.
+    channel_id: str | None = None  # None selects the default account.
 
 
 @dataclass(slots=True)
@@ -81,12 +86,47 @@ class UploadResult:
     video_id: str
     url: str
     channel_id: str
+    status: JobStatus = JobStatus.UPLOADED
 
 
 @dataclass(slots=True)
 class ChannelInfo:
     id: str
     title: str
+
+
+@dataclass(slots=True)
+class ChannelAccount:
+    id: str = ''
+    title: str = ''
+    thumbnail_url: str | None = None
+    is_default: bool = False
+    status: Literal['connected', 'expired', 'error'] = 'connected'
+
+
+@dataclass(slots=True)
+class ChannelStats:
+    channel_id: str = ''
+    subscribers: int | None = None
+    total_views: int = 0
+    video_count: int = 0
+    subscribers_hidden: bool = False
+    fetched_at: datetime | None = None
+
+
+@dataclass(slots=True)
+class VideoStats:
+    video_id: str = ''
+    title: str = ''
+    thumbnail_url: str | None = None
+    published_at: datetime | None = None
+    scheduled_at: datetime | None = None
+    privacy_status: str = 'private'
+    duration_seconds: float = 0.0
+    views: int = 0
+    likes: int | None = None
+    comments: int | None = None
+    fetched_at: datetime | None = None
 
 
 @runtime_checkable
@@ -125,6 +165,22 @@ class YouTubeService(Protocol):
         """Return YouTube processing status: processing/succeeded/failed/terminated."""
         ...
 
+    def list_accounts(self) -> list[ChannelAccount]: ...
+
+    def add_account(self) -> ChannelAccount: ...
+
+    def remove_account(self, channel_id: str) -> None: ...
+
+    def set_default_account(self, channel_id: str) -> None: ...
+
+    def get_channel_stats(self, channel_id: str, force_refresh: bool = False) -> ChannelStats: ...
+
+    def list_channel_videos(self, channel_id: str, limit: int = 50, force_refresh: bool = False) -> list[VideoStats]: ...
+
+    def sync_scheduled(self) -> list[UploadResult]:
+        """Return scheduled uploads whose published state changed on this sync."""
+        ...
+
 
 @runtime_checkable
 class HistoryRepository(Protocol):
@@ -150,6 +206,8 @@ class HistoryRepository(Protocol):
         self, limit: int = 100, offset: int = 0, status: JobStatus | None = None,
     ) -> list[HistoryRecord]: ...
 
+    def list_scheduled(self) -> list[HistoryRecord]: ...
+
 
 @runtime_checkable
 class SecretStore(Protocol):
@@ -169,3 +227,20 @@ class SettingsStore(Protocol):
     def get(self, key: str, default: Any = None) -> Any: ...
 
     def set(self, key: str, value: Any) -> None: ...
+
+
+@runtime_checkable
+class StatsCache(Protocol):
+    """Detached snapshots; missing channel returns None, missing videos return [].
+
+    Datetimes are timezone-aware when supplied; fetched_at=None means unknown.
+    save_videos replaces the channel's complete cached snapshot, including [].
+    """
+
+    def save_channel_stats(self, stats: ChannelStats) -> None: ...
+
+    def load_channel_stats(self, channel_id: str) -> ChannelStats | None: ...
+
+    def save_videos(self, channel_id: str, videos: list[VideoStats]) -> None: ...
+
+    def load_videos(self, channel_id: str) -> list[VideoStats]: ...

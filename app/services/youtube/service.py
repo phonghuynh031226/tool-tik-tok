@@ -23,10 +23,10 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 from requests.exceptions import ConnectionError as RequestsConnectionError, Timeout
 
-from app.contracts import ChannelInfo, UploadRequest, UploadResult
+from app.contracts import ChannelInfo, ChannelAccount, UploadRequest, UploadResult
 from app.core.cancel import CancelToken
 from app.core.paths import safe_path
-from app.errors import AppError, AuthExpired, ContentInvalid, NetworkError, QuotaExceeded
+from app.errors import AppError, AuthExpired, ContentInvalid, NetworkError, QuotaExceeded, AccountNotFound, StatsUnavailable
 from app.security.secrets import KeyringSecretStore
 from . import auth
 from ._quiet import quiet_sdk
@@ -225,14 +225,53 @@ class YouTubeService:
     def get_channel(self) -> ChannelInfo:
         return self._channel(_Policy(self, CancelToken()))
 
+    # V2 protocol adapters retain the current single-account production backend.
+    # Full multi-account/statistics/scheduling implementation is a later stage.
+    def list_accounts(self):
+        if self._api is None or self._credentials is None:
+            return []
+        channel = self.get_channel()
+        return [ChannelAccount(channel.id, channel.title, is_default=True)]
+
+    def add_account(self):
+        raise invalid('Thêm nhiều tài khoản thật chưa được triển khai trong bước chuẩn bị v2.')
+
+    def remove_account(self, channel_id):
+        self.set_default_account(channel_id)
+        self.disconnect()
+
+    def set_default_account(self, channel_id):
+        if self.get_channel().id != channel_id:
+            raise AccountNotFound()
+
+    def get_channel_stats(self, channel_id, force_refresh=False):
+        raise StatsUnavailable()
+
+    def list_channel_videos(self, channel_id, limit=50, force_refresh=False):
+        raise StatsUnavailable()
+
+    def sync_scheduled(self):
+        return []
+
+    def _validate_v2_request(self, req):
+        if req.publish_at is not None:
+            raise invalid('Hẹn giờ đăng thật chưa được triển khai trong bước chuẩn bị v2.')
+        if req.channel_id is not None and self.get_channel().id != req.channel_id:
+            raise AccountNotFound()
+
     @staticmethod
     def _metadata_key(req):
         payload = asdict(req)
+        # Keep existing resumable-session identities for legacy/default requests.
+        for name in ('publish_at', 'channel_id'):
+            if payload.get(name) is None:
+                payload.pop(name, None)
         payload['path'] = str(safe_path(req.path))
         return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
     def confirm_upload(self, req: UploadRequest, *, made_for_kids: bool, channel_id: str) -> None:
         validate_upload_request(req)
+        self._validate_v2_request(req)
         if not isinstance(made_for_kids, bool) or made_for_kids != req.made_for_kids:
             raise invalid('Lựa chọn đối tượng trẻ em phải được truyền rõ và khớp yêu cầu upload.')
         channel = self.get_channel()
@@ -252,6 +291,7 @@ class YouTubeService:
     def _upload(self, req, on_progress, cancel_token):
         validate_upload_request(req)
         cancel_token.raise_if_cancelled()
+        self._validate_v2_request(req)
         self._connected()
         metadata_key = self._metadata_key(req)
         if not self._confirmation or self._confirmation[0] != metadata_key:

@@ -10,20 +10,21 @@
 - Không commit, không push; cấm `git reset --hard` và `git clean`.
 - Không ghi đè README hiện có; phần giới thiệu chỉ được nối cuối.
 
-## Sở hữu thư mục
+## Sở hữu thư mục v2
 
 | AI | Phạm vi sở hữu |
 | --- | --- |
-| Codex | `app/contracts.py`, `app/errors.py`, `app/core/`, `app/services/tiktok/`, `app/services/youtube/`, `app/db/`, `app/security/`, `tests/core/`, `tests/services/`, cấu hình build và `build/` |
+| Codex | `app/contracts.py`, `app/errors.py`, `app/core/`, `app/db/`, `app/security/`, `app/services/tiktok/`, `app/services/youtube/`, `tests/services/`, `tests/core/` |
 | Antigravity | `app/ui/`, `app/workers/`, `app/services/gemini/`, `assets/`, `tests/ui/` |
 
 Khung Bước 0 được tạo theo yêu cầu chủ dự án. Từ các bước sau, không sửa vùng
-của AI khác khi chưa phối hợp rõ ràng. `main.py`, `app/services/fakes.py` và cấu hình
+của AI khác khi chưa được chủ dự án cho phép hoặc phối hợp rõ ràng. `main.py`, `app/services/fakes.py` và cấu hình
 chung cần phối hợp trước khi sửa đồng thời.
 
 ## Hợp đồng đóng băng
 
-- `app/contracts.py` đóng băng sau Bước 0. Không tự đổi trường, chữ ký, kiểu hay ngữ nghĩa.
+- `app/contracts.py` được đóng băng lại sau lượt bổ sung hợp đồng v2 đã được chủ dự án cho phép.
+  Không tự thêm/đổi/xóa trường, chữ ký, kiểu hay ngữ nghĩa sau lượt này.
 - Muốn đổi phải ghi đề xuất trong `docs/CONTRACT_CHANGES.md` để chủ dự án duyệt trước.
 - Dùng cùng hợp đồng giữa backend và UI; không tạo bản sao hợp đồng ở thư mục khác.
 - Quy ước callback: float từ 0.0 đến 1.0, chạy đồng bộ trên luồng gọi.
@@ -38,5 +39,7 @@ chung cần phối hợp trước khi sửa đồng thời.
   `rights_confirmed` không thay thế nút xác nhận upload trong UI.
 - Mặc định privacy là private. Không tích hợp dịch vụ thật trong Bước 0.
 - Fake chỉ cho dev/test, không dùng để chứng minh tích hợp thật hoạt động.
+- UI v2 phát triển bằng `STUDIO_USE_FAKES=1`; phải giữ banner "CHẾ ĐỘ GIẢ LẬP".
+  Chạy thường mặc định tắt fake; không gắn fake vào backend thật.
 - Không báo “hoàn thành” khi chưa chạy kiểm thử thật; báo đúng lệnh, kết quả và test bỏ qua.
 - Không commit/push, không mở rộng công việc sau Bước 0 khi chưa được yêu cầu.

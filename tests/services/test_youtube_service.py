@@ -72,6 +72,34 @@ def test_upload_protocol_and_payload(setup_service):
     assert request.next_chunk.call_args.kwargs['num_retries'] == 0
 
 
+def test_v2_defaults_preserve_legacy_session_identity(setup_service):
+    from dataclasses import asdict
+    import hashlib
+    from app.core.paths import safe_path
+    instance, req, _, _, _, _ = setup_service
+    legacy = asdict(req)
+    legacy.pop('publish_at')
+    legacy.pop('channel_id')
+    legacy['path'] = str(safe_path(req.path))
+    expected = hashlib.sha256(json.dumps(legacy, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    assert instance._metadata_key(req) == expected
+    assert instance.list_accounts()[0].id == CHANNEL
+
+
+def test_real_v2_request_fails_closed_before_upload(setup_service):
+    from datetime import datetime, timedelta, timezone
+    from app.errors import AccountNotFound
+    instance, req, _, api, _, _ = setup_service
+    req.channel_id = 'another-channel'
+    with pytest.raises(AccountNotFound):
+        instance.upload(req, lambda _: None, CancelToken())
+    req.channel_id = CHANNEL
+    req.publish_at = datetime.now(timezone.utc) + timedelta(days=1)
+    with pytest.raises(ContentInvalid):
+        instance.upload(req, lambda _: None, CancelToken())
+    api.videos.return_value.insert.assert_not_called()
+
+
 def test_rights_and_confirmation_fail_before_insert(setup_service):
     instance, req, _, api, _, _ = setup_service
     req.rights_confirmed = False
