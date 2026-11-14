@@ -21,6 +21,10 @@ from app.security.settings import JSONSettingsStore
 from app.services.gemini import GeminiContentGenerator
 
 
+class GeminiSelection(QObject):
+    changed = Signal(str, str)
+
+
 class _ConnectionAttempt(QObject):
     def __init__(self, connection, generation):
         super().__init__(connection)
@@ -114,6 +118,7 @@ class ServiceContainer:
     secrets: SecretStore
     settings: SettingsStore
     connection: YouTubeConnection = field(default_factory=YouTubeConnection, init=False)
+    gemini_selection: GeminiSelection = field(default_factory=GeminiSelection, init=False)
 
     @property
     def is_fake(self):

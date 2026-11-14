@@ -50,6 +50,10 @@ VIDEO_ANALYZE_INSTRUCTION = (
 )
 
 
+class ModelUnavailable(ContentInvalid):
+    """Only a model-generation 404 can trigger automatic model selection."""
+
+
 class ContentOutputSchema(BaseModel):
     """Structured output schema for Gemini content generation."""
 
@@ -278,6 +282,9 @@ class GeminiContentGenerator(ContentGenerator):
         self._secret_store = secret_store
         self._settings_store = settings_store
         self._client_factory = client_factory
+        self._available_models: list[str] | None = None
+        self.last_model_notice = ''
+        self.last_successful_model = ''
 
     def _resolve_api_key(self) -> str:
         """Resolve API key safely without logging it."""
@@ -324,7 +331,7 @@ class GeminiContentGenerator(ContentGenerator):
                 exc_type,
                 model_display,
             )
-            raise ContentInvalid(
+            raise ModelUnavailable(
                 f"Mô hình AI '{model_display}' không tồn tại hoặc đã ngừng hỗ trợ (mã 404). "
                 f"Vui lòng vào Cài đặt để chọn lại mô hình Gemini khác."
             ) from exc
@@ -453,6 +460,7 @@ class GeminiContentGenerator(ContentGenerator):
                     clean_name = name.removeprefix("models/")
                     if clean_name:
                         result.append(clean_name)
+            self._available_models = list(result)
             return result
         except AuthExpired:
             raise
@@ -476,6 +484,41 @@ class GeminiContentGenerator(ContentGenerator):
             return False
 
     def generate(self, meta: VideoMeta, settings: Mapping[str, Any]) -> GeneratedContent:
+        """Try at most three distinct models, switching ONLY after a 404."""
+        self.last_model_notice = ''
+        self.last_successful_model = ''
+        saved = self._settings_store.get('gemini_model') if self._settings_store else None
+        model = settings.get('model') or saved or select_preferred_model(self._available_models or [])[0]
+        original = model
+        tried = []
+        deadline = time.monotonic() + float(settings.get('timeout', 60.0))
+        while len(tried) < 3:
+            tried.append(model)
+            try:
+                content = self._generate_one(meta, dict(settings) | {'model': model, 'timeout': max(0.001, deadline - time.monotonic())})
+            except ModelUnavailable:
+                if self._available_models is None:
+                    self.list_models()
+                remaining = [name for name in self._available_models or [] if name not in tried
+                    and 'gemini' in name.casefold() and 'flash' in name.casefold()
+                    and 'image' not in name.casefold() and 'gemma' not in name.casefold()]
+                if len(tried) == 3 or not remaining:
+                    raise ModelUnavailable(
+                        f"Mô hình AI '{original}' không tồn tại hoặc đã ngừng hỗ trợ (404). "
+                        f"Đã thử {len(tried)} model khả dụng nhưng chưa tạo được nội dung. "
+                        'Vui lòng chọn model khác trong Cài đặt rồi thử lại.'
+                    ) from None
+                model = select_preferred_model(remaining)[0]
+                continue
+            self.last_successful_model = model
+            if self._settings_store:
+                self._settings_store.set('gemini_model', model)
+            if len(tried) > 1:
+                self.last_model_notice = f'Model {original} không khả dụng, đã chuyển sang model {model}.'
+            return content
+        raise AssertionError('Unreachable')
+
+    def _generate_one(self, meta: VideoMeta, settings: Mapping[str, Any]) -> GeneratedContent:
         """Generate optimized YouTube Shorts metadata with validation, timeout, and retry."""
         client = self._get_client()
 

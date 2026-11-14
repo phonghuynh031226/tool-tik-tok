@@ -34,6 +34,11 @@ class AIPage(QWidget):
         self.thread_pool = QThreadPool.globalInstance()
 
         self._init_ui()
+        self.lbl_model_notice = QLabel(self)
+        self.lbl_model_notice.setWordWrap(True)
+        self.lbl_model_notice.setTextFormat(Qt.TextFormat.PlainText)
+        self.layout().insertWidget(0, self.lbl_model_notice)
+        self.services.gemini_selection.changed.connect(self._on_model_selected)
         self._connect_state()
 
     def _init_ui(self) -> None:
@@ -258,6 +263,7 @@ class AIPage(QWidget):
         }
 
         worker = GenerateContentWorker(self.services.generator, self.state.meta, settings)
+        worker.signals.model_selected.connect(self.services.gemini_selection.changed)
         worker.signals.progress.connect(lambda p: self.progress_bar.setValue(int(p * 100)))
         worker.signals.finished.connect(self._on_finished)
         worker.signals.error.connect(self._on_error)
@@ -301,3 +307,13 @@ class AIPage(QWidget):
         QGuiApplication.clipboard().setText(text)
         QMessageBox.information(self, "Đã sao chép", "Đã sao chép nội dung vào bộ nhớ tạm.")
 
+
+    @Slot(str, str)
+    def _on_model_selected(self, model, message):
+        self.services.settings.set('gemini_model', model)
+        self.lbl_model_notice.setText(message)
+        index = self.combo_model.findData(model)
+        if index < 0:
+            self.combo_model.addItem(model, model)
+            index = self.combo_model.count() - 1
+        self.combo_model.setCurrentIndex(index)

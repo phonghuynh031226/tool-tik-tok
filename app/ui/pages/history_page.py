@@ -142,7 +142,14 @@ class HistoryPage(QWidget):
 
         self.table.setRowCount(len(records))
         for row, rec in enumerate(records):
-            vid_id = str(rec.get("video_id") or rec.get("id") or "-")
+            source_id = str(rec.get('tiktok_video_id') or rec.get('video_id') or '')
+            source_path = rec.get('local_mp4_path') or rec.get('path') or rec.get('local_video_path')
+            if source_id and not source_id.startswith(('dry-run', 'local-')):
+                vid_id = source_id
+            elif source_path:
+                vid_id = Path(str(source_path).replace('\\', '/')).name
+            else:
+                vid_id = 'Không có mã TikTok'
             title = str(rec.get("title") or "Không tiêu đề")
             raw_status = rec.get("status")
             status_val = raw_status.value if hasattr(raw_status, "value") else str(raw_status or "NEW")

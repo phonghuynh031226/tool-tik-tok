@@ -43,6 +43,11 @@ class DashboardPage(QWidget):
         self._active_upload_worker: Optional[UploadYouTubeWorker] = None
 
         self._init_ui()
+        self.lbl_model_notice = QLabel(self)
+        self.lbl_model_notice.setWordWrap(True)
+        self.lbl_model_notice.setTextFormat(Qt.TextFormat.PlainText)
+        self.layout().insertWidget(0, self.lbl_model_notice)
+        self.services.gemini_selection.changed.connect(self._on_model_selected)
         self._connect_state()
         self.services.add_mode_banner(self)
         self.services.connection.changed.connect(self._refresh_channel_info)
@@ -696,6 +701,7 @@ class DashboardPage(QWidget):
         self._ai_timer.start(65000)
 
         worker = GenerateContentWorker(self.services.generator, self.state.meta, settings)
+        worker.signals.model_selected.connect(self.services.gemini_selection.changed)
         worker.signals.progress.connect(lambda p: self.progress_ai.setValue(int(p * 100)))
         worker.signals.finished.connect(self._on_generate_finished)
         worker.signals.error.connect(self._on_worker_error)
@@ -958,3 +964,8 @@ class DashboardPage(QWidget):
             self.progress_ai.setVisible(False)
             self.progress_upload.setVisible(False)
 
+
+    @Slot(str, str)
+    def _on_model_selected(self, model, message):
+        self.services.settings.set('gemini_model', model)
+        self.lbl_model_notice.setText(message)

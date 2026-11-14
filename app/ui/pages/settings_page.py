@@ -40,6 +40,7 @@ class SettingsPage(QWidget):
 
         self._init_ui()
         self._load_settings()
+        self.services.gemini_selection.changed.connect(self._on_model_selected)
         self.services.add_mode_banner(self)
         self.services.connection.changed.connect(self._show_channel)
         self.services.connection.error.connect(self._connection_error)
@@ -582,3 +583,13 @@ class SettingsPage(QWidget):
         self.progress_ytdlp.setVisible(False)
         self.lbl_ytdlp_result.setText(f"Lỗi: {err}")
         QMessageBox.critical(self, "Lỗi cập nhật yt-dlp", str(err))
+
+    @Slot(str, str)
+    def _on_model_selected(self, model, message):
+        self.combo_gemini_model.blockSignals(True)
+        index = self.combo_gemini_model.findData(model)
+        if index < 0:
+            self.combo_gemini_model.addItem(model, model)
+            index = self.combo_gemini_model.count() - 1
+        self.combo_gemini_model.setCurrentIndex(index)
+        self.combo_gemini_model.blockSignals(False)

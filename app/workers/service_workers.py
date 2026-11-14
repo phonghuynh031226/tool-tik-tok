@@ -137,6 +137,10 @@ class GenerateContentWorker(QRunnable):
         try:
             self.signals.progress.emit(0.2)
             content = self.generator.generate(self.meta, self.settings)
+            notice = getattr(self.generator, 'last_model_notice', '')
+            model = getattr(self.generator, 'last_successful_model', '')
+            if notice and model:
+                self.signals.model_selected.emit(model, notice)
             self.signals.progress.emit(1.0)
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()

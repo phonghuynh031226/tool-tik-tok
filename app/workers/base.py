@@ -32,6 +32,7 @@ class WorkerSignals(QObject):
     finished = Signal(object)
     error = Signal(str)
     cancelled = Signal()
+    model_selected = Signal(str, str)
 
 
 class TaskWorker(QRunnable, Generic[T]):
