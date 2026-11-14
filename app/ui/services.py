@@ -9,10 +9,11 @@ from app.contracts import (
     ContentGenerator, HistoryRepository, SecretStore, SettingsStore,
     TikTokService, YouTubeService,
 )
-from app.services.fakes import (
-    FakeContentGenerator, FakeHistoryRepository, FakeSecretStore,
-    FakeSettingsStore, FakeTikTokService, FakeYouTubeService,
-)
+from app.services.tiktok.service import TikTokService as RealTikTokService
+from app.services.youtube.service import YouTubeService as RealYouTubeService
+from app.db.repository import SQLiteHistoryRepository
+from app.security.secrets import KeyringSecretStore
+from app.security.settings import JSONSettingsStore
 from app.services.gemini import GeminiContentGenerator
 
 
@@ -33,18 +34,18 @@ class ServiceContainer:
 
     @classmethod
     def create_default(cls) -> ServiceContainer:
-        """Create container with real Gemini generator plugged in."""
-        secrets = FakeSecretStore()
-        settings = FakeSettingsStore()
+        """Create production services sharing secure storage."""
+        secrets = KeyringSecretStore()
+        settings = JSONSettingsStore()
         generator = GeminiContentGenerator(
             secret_store=secrets,
             settings_store=settings,
         )
         return cls(
-            tiktok=FakeTikTokService(),
+            tiktok=RealTikTokService(),
             generator=generator,
-            youtube=FakeYouTubeService(),
-            history=FakeHistoryRepository(),
+            youtube=RealYouTubeService(secret_store=secrets),
+            history=SQLiteHistoryRepository(secret_store=secrets),
             secrets=secrets,
             settings=settings,
         )
@@ -52,6 +53,10 @@ class ServiceContainer:
     @classmethod
     def create_fake(cls) -> ServiceContainer:
         """Create a container populated with deterministic in-memory fakes."""
+        from app.services.fakes import (
+            FakeTikTokService, FakeContentGenerator, FakeYouTubeService,
+            FakeHistoryRepository, FakeSecretStore, FakeSettingsStore,
+        )
         return cls(
             tiktok=FakeTikTokService(),
             generator=FakeContentGenerator(),
@@ -66,7 +71,7 @@ _default_container: Optional[ServiceContainer] = None
 
 
 def get_services() -> ServiceContainer:
-    """Get the current global service container, defaulting to real Gemini generator."""
+    """Get the current global service container, defaulting to production services."""
     global _default_container
     if _default_container is None:
         _default_container = ServiceContainer.create_default()

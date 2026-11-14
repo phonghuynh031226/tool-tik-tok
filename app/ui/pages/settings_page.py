@@ -401,7 +401,10 @@ class SettingsPage(QWidget):
             p = Path(f)
             if self._check_and_confirm_outside_project_path(p):
                 self.edit_client_secret.setText(str(p.resolve()))
-                self.services.secrets.set("youtube_client_secret_path", str(p.resolve()))
+                if hasattr(self.services.youtube, "import_client_secret"):
+                    self.services.youtube.import_client_secret(p)
+                else:
+                    self.services.secrets.set("youtube_client_secret_path", str(p.resolve()))
                 QMessageBox.information(self, "Đã chọn", f"Đã cấu hình client_secret: {p.name}")
 
     @Slot()

@@ -49,6 +49,27 @@ def resource_root() -> Path:
     return project_root()
 
 
+def default_download_directory() -> Path:
+    """Persistent downloads beside source/exe, independent of TEMP/TMP and cwd."""
+    return safe_path('downloads')
+
+
+def resolve_download_directory(value: str | Path | None = None) -> Path:
+    """Normalize a project-local destination, including the old UI default.
+
+    The UI historically passed .tmp/downloads explicitly. Treat exactly that
+    legacy default (relative or absolute) as downloads; preserve custom paths.
+    This only returns a path: it never moves, deletes or reads old media.
+    """
+    if value is None:
+        return default_download_directory()
+    base = project_root()
+    candidate = safe_path(value, root=base)
+    if candidate == base / '.tmp' / 'downloads':
+        return safe_path('downloads', root=base)
+    return candidate
+
+
 def safe_path(*parts: str | Path, root: Path | None = None) -> Path:
     """Normalize a path under root, rejecting escapes and existing links.
 

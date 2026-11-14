@@ -11,27 +11,34 @@ import tempfile
 from threading import RLock
 from typing import Any
 
-from app.core.paths import safe_path
+from app.core.paths import default_download_directory, resolve_download_directory, safe_path
 from .paths import PathConfirmationRequired, assess_download_directory
 from .redaction import nonsecret_value
 
-_ALIASES = {'privacy': 'default_privacy', 'language': 'ui_language', 'prompt': 'custom_prompt', 'download_directory': 'download_dir'}
+_ALIASES = {'privacy': 'default_privacy', 'language': 'ui_language', 'prompt': 'custom_prompt', 'download_directory': 'download_dir', 'ui_theme': 'theme'}
 
 
 class JSONSettingsStore:
     def __init__(self, path: Path | None = None) -> None:
         self.path = safe_path(path if path is not None else Path('config/settings.json'))
         self._lock = RLock()
-        self._defaults = {'download_dir': str(safe_path('downloads')), 'theme': 'system',
-                          'ui_language': 'vi', 'default_privacy': 'private', 'custom_prompt': ''}
+        self._defaults = {'download_dir': str(default_download_directory()), 'theme': 'system',
+                          'ui_language': 'vi', 'default_privacy': 'private', 'custom_prompt': '',
+                          'gemini_model': '', 'gemini_prompt_template': '', 'analyze_video_file': False}
         self._values = self._load()
 
     def _validate(self, key: str, value: Any) -> Any:
         if key not in self._defaults:
             raise ValueError('Chỉ được lưu các tùy chọn không nhạy cảm đã định nghĩa.')
+        if key == 'analyze_video_file':
+            if type(value) is not bool:
+                raise ValueError('Cần giá trị boolean.')
+            return value
         if key == 'download_dir':
             nonsecret_value(str(value), reject_text=True)
-            return str(assess_download_directory(value).path)
+            assessment = assess_download_directory(value)
+            return str(assessment.path if assessment.requires_user_confirmation
+                       else resolve_download_directory(assessment.path))
         value = nonsecret_value(value, reject_text=True)
         if not isinstance(value, str):
             raise ValueError('Giá trị cấu hình phải là chuỗi.')
@@ -77,7 +84,7 @@ class JSONSettingsStore:
         if assessment.requires_user_confirmation and user_confirmed is not True:
             raise PathConfirmationRequired(assessment)
         with self._lock:
-            self._save(self._values | {'download_dir': str(assessment.path)})
+            self._save(self._values | {'download_dir': self._validate('download_dir', value)})
 
     def _save(self, values: dict) -> None:
         path = safe_path(self.path)

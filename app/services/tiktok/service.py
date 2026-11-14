@@ -19,7 +19,7 @@ from yt_dlp.utils import YoutubeDLError
 
 from app.contracts import DownloadResult, ProgressCallback, VideoMeta
 from app.core.cancel import CancelToken
-from app.core.paths import safe_path
+from app.core.paths import resolve_download_directory, safe_path
 from app.errors import AppError, ContentInvalid, DownloadFailed
 from ._process import local_tool
 from .errors import failure, map_error
@@ -138,7 +138,7 @@ class TikTokService:
         canonical = resolve_url(meta.url)
         if meta.video_id != extract_video_id(canonical):
             raise failure(ContentInvalid, 'Mã video không khớp liên kết TikTok.')
-        dest = safe_path(dest_dir)
+        dest = resolve_download_directory(dest_dir)
         target = safe_path(dest, f'{meta.video_id}.mp4')
         callback_errors: list[BaseException] = []
         last_fraction = 0.0

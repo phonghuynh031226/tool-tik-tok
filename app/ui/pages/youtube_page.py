@@ -335,18 +335,16 @@ class YouTubePage(QWidget):
         if dialog.exec() != UploadConfirmDialog.DialogCode.Accepted:
             return  # Cancelled
 
+        if not self.state.dry_run and hasattr(self.services.youtube, "confirm_upload"):
+            self.services.youtube.confirm_upload(
+                req, made_for_kids=req.made_for_kids, channel_id=channel.id
+            )
         self.btn_upload.setEnabled(False)
         self.btn_cancel.setVisible(True)
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(10)
 
         worker = UploadYouTubeWorker(self.services.youtube, req, dry_run=self.state.dry_run)
-        self._active_upload_worker = worker
-        worker.signals.progress.connect(lambda p: self.progress_bar.setValue(int(p * 100)))
-        worker.signals.finished.connect(self._on_finished)
-        worker.signals.error.connect(self._on_error)
-        worker.signals.cancelled.connect(self._on_cancelled)
-        self.thread_pool.start(worker)
         self._active_upload_worker = worker
         worker.signals.progress.connect(lambda p: self.progress_bar.setValue(int(p * 100)))
         worker.signals.finished.connect(self._on_finished)
@@ -362,16 +360,28 @@ class YouTubePage(QWidget):
         self._active_upload_worker = None
         self.state.set_upload_result(res)
 
+        if self.state.dry_run:
+            return
         try:
+            meta = self.state.meta
+            download = self.state.download_result
             self.services.history.add({
-                "video_id": res.video_id,
-                "url": res.url,
-                "title": self.state.title,
+                "video_id": meta.video_id if meta else "",
+                "url": meta.url if meta else "",
+                "title": meta.title if meta else self.state.title,
+                "youtube_title": self.state.title,
+                "youtube_description": self.state.description,
+                "youtube_video_id": res.video_id,
+                "youtube_url": res.url,
+                "youtube_channel_id": res.channel_id,
+                "local_mp4_path": str(self.state.local_video_path),
+                "sha256": download.sha256 if download else "",
                 "status": self.state.status,
-                "privacy": self.state.privacy,
+                "privacy_status": self.state.privacy,
+                "rights_confirmed": self.state.rights_confirmed,
             })
         except Exception:
-            pass
+            QMessageBox.warning(self, "Lịch sử", "Video đã đăng nhưng không lưu được lịch sử.")
 
     @Slot()
     def _on_cancel(self) -> None:

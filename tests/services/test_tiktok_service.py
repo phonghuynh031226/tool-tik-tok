@@ -193,6 +193,27 @@ def test_valid_existing_file_skips_ydl(sdk, tmp_path):
     assert progress[-1] == 1
 
 
+@pytest.mark.parametrize('absolute', [False, True])
+def test_legacy_default_goes_to_downloads_and_preserves_old_file(sdk, tmp_path, monkeypatch, absolute):
+    import sys
+    monkeypatch.setattr(sys, 'frozen', True, raising=False)
+    monkeypatch.setattr(sys, 'executable', str(tmp_path / 'studio.exe'))
+    temporary = tmp_path / '.tmp'
+    legacy = temporary / 'downloads'
+    legacy.mkdir(parents=True)
+    old_file = legacy / '123.mp4'
+    old_file.write_bytes(b'old-user-file-do-not-touch')
+    monkeypatch.setenv('TEMP', str(temporary))
+    monkeypatch.setenv('TMP', str(temporary))
+    monkeypatch.chdir(temporary)
+    downloading_sdk(sdk)
+    destination = legacy if absolute else Path('.tmp/downloads')
+    result = TikTokService().download(meta(), destination, lambda value: None, CancelToken())
+    assert result.path == tmp_path / 'downloads/123.mp4'
+    assert result.path.read_bytes() == b'video'
+    assert old_file.read_bytes() == b'old-user-file-do-not-touch'
+
+
 def test_invalid_existing_file_is_replaced_only_after_validation(sdk, tmp_path):
     target = tmp_path / '123.mp4'
     target.write_bytes(b'broken')

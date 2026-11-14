@@ -20,6 +20,8 @@ set "MPLCONFIGDIR=%PROJECT_ROOT%\.cache\matplotlib"
 set "PYTHONNOUSERSITE=1"
 set "PYTHONHOME="
 set "PYTHONPATH="
+rem Avoid collecting unrelated native DLLs from host runtime tools.
+set "PATH=%PROJECT_ROOT%\.venv\Scripts;%SystemRoot%\System32;%SystemRoot%"
 "%PYTHON%" -B -c "import sys; from app.core.paths import safe_path; assert sys.version_info[:2] == (3,12), 'Python 3.12 required'; [safe_path(p) for p in ('.tmp','.cache','build','dist','bin','bin/ffmpeg.exe','bin/ffprobe.exe')]"
 if errorlevel 1 goto :failed
 if not exist "%TEMP%" mkdir "%TEMP%"

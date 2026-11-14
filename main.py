@@ -1,4 +1,4 @@
-"""Step 0: open an empty desktop window. No service is connected automatically."""
+"""Desktop entry point using the production service container."""
 
 import sys
 
@@ -6,9 +6,8 @@ from PySide6.QtWidgets import QApplication, QMainWindow
 
 
 def create_window() -> QMainWindow:
-    window = QMainWindow()
-    window.setWindowTitle('TikTok YouTube Studio')
-    window.resize(1000, 700)
+    from app.ui.main_window import MainWindow
+    window = MainWindow()
     return window
 
 
