@@ -14,3 +14,5 @@ token*
 __pycache__/
 *.py[cod]
 .pytest_cache/
+
+config/settings.json
