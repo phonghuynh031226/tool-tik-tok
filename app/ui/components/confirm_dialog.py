@@ -76,6 +76,16 @@ class UploadConfirmDialog(QDialog):
 
         layout.addWidget(info_frame)
 
+        self.lbl_privacy_warning = QLabel(self)
+        self.lbl_privacy_warning.setWordWrap(True)
+        self.lbl_privacy_warning.setStyleSheet('background:#7f1d1d;color:#fef08a;padding:12px;font-weight:bold;')
+        if request.privacy in {'public', 'unlisted'}:
+            self.lbl_privacy_warning.setText('⚠ ' + request.privacy.upper() + ': Video sẽ không còn ở chế độ Riêng tư. ' +
+                ('Mọi người có thể xem và tìm thấy video.' if request.privacy == 'public' else 'Bất kỳ ai có liên kết đều có thể xem và chia sẻ.'))
+        else:
+            self.lbl_privacy_warning.hide()
+        layout.addWidget(self.lbl_privacy_warning)
+
         # Warning / Info text
         if dry_run:
             warn_box = QLabel(

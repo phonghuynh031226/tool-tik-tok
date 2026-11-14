@@ -118,6 +118,14 @@ class HistoryPage(QWidget):
         except Exception:
             records = []
 
+        # Older versions persisted simulated UploadResult values. Do not display
+        # them as published or expose their invented URLs; leave stored data intact.
+        records = [dict(record) for record in records]
+        for record in records:
+            simulated = record.get('dry_run') is True or any(
+                str(record.get(key) or '').startswith('dry-run') for key in ('video_id', 'youtube_video_id'))
+            if simulated:
+                record.update(status='DRY_RUN', processing_status='DRY_RUN', youtube_video_id=None, youtube_url=None, url='')
         self._current_records = list(records)
 
         status_text_map = {
@@ -127,6 +135,7 @@ class HistoryPage(QWidget):
             "CONTENT_READY": "Nội dung sẵn sàng",
             "UPLOADING": "Đang tải lên...",
             "UPLOADED": "Đã xuất bản",
+            "DRY_RUN": "Chạy thử",
             "FAILED": "Thất bại",
             "CANCELLED": "Đã hủy",
         }
@@ -166,6 +175,7 @@ class HistoryPage(QWidget):
 
             # 1. Tiếp tục job dở dang
             btn_resume = QPushButton("Tiếp tục")
+            btn_resume.setEnabled(status_val != 'DRY_RUN')
             btn_resume.setProperty("class", "primaryBtn")
             btn_resume.setFixedHeight(28)
             btn_resume.setStyleSheet("padding: 2px 6px; font-size: 11px;")

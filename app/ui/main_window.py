@@ -188,6 +188,7 @@ class MainWindow(QMainWindow):
             "CONTENT_READY": "Nội dung AI sẵn sàng",
             "UPLOADING": "Đang tải lên YouTube...",
             "UPLOADED": "Đã xuất bản YouTube",
+            "DRY_RUN": "Đã chạy thử (chưa đăng YouTube)",
             "FAILED": "Thất bại",
             "CANCELLED": "Đã hủy tác vụ",
         }

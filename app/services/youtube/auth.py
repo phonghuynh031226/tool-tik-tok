@@ -6,6 +6,7 @@ from pathlib import Path
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
+from requests.exceptions import ConnectionError, Timeout
 
 from app.errors import AuthExpired
 from ._quiet import quiet_sdk
@@ -19,6 +20,27 @@ OAUTH_SCOPE_EXPLANATION = (
     'youtube.readonly: đọc tên/mã kênh đích để bạn xác nhận và kiểm tra trạng thái xử lý video. '
     'Ứng dụng không tự đăng video khi bạn chưa xác nhận.'
 )
+
+
+def oauth_error(error):
+    """Classify without ever exposing provider diagnostics/credentials to UI."""
+    code = str(getattr(error, 'error', '')).lower()
+    detail = str(error).lower()
+    if any(word in detail for word in ('test user', 'testing', 'developer-approved')):
+        message = 'Email chưa được thêm vào Test users. Hãy thêm email trong Google Auth Platform → Audience rồi kết nối lại.'
+    elif code == 'access_denied':
+        message = 'Bạn đã từ chối hoặc hủy đăng nhập Google (access_denied). Nếu Google báo ứng dụng Testing, hãy thêm email vào Test users.'
+    elif code in {'invalid_client', 'unauthorized_client'}:
+        message = 'OAuth client không hợp lệ. Hãy chọn client_secret.json loại Desktop từ đúng project Google.'
+    elif code == 'timeout' or isinstance(error, TimeoutError) or 'timeout' in type(error).__name__.lower():
+        message = 'Đã hết thời gian chờ đăng nhập Google hoặc cửa sổ đã đóng. Hãy kết nối lại; kiểm tra Test users nếu Google hiển thị lỗi 403.'
+    elif code == 'network' or isinstance(error, (ConnectionError, Timeout, OSError)):
+        message = 'Không kết nối được mạng tới Google. Hãy kiểm tra Internet và thử lại.'
+    else:
+        message = 'Không hoàn tất được xác thực Google. Hãy kiểm tra OAuth Desktop client và Test users rồi kết nối lại.'
+    result = AuthExpired()
+    result.user_message = message
+    return result
 
 
 def _client_config(value):
@@ -82,8 +104,8 @@ def authorize(secret_store):
                 open_browser=True, timeout_seconds=180, authorization_prompt_message='',
                 success_message='Đã kết nối tài khoản. Hãy quay lại ứng dụng để xác nhận kênh đích.',
                 access_type='offline', prompt='consent')
-    except Exception:
-        raise AuthExpired() from None
+    except Exception as error:
+        raise oauth_error(error) from None
     save_credentials(credentials, secret_store)
     return credentials
 

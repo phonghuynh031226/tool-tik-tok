@@ -40,6 +40,10 @@ class SettingsPage(QWidget):
 
         self._init_ui()
         self._load_settings()
+        self.services.add_mode_banner(self)
+        self.services.connection.changed.connect(self._show_channel)
+        self.services.connection.error.connect(self._connection_error)
+        self._show_channel()
 
     def _init_ui(self) -> None:
         outer = QVBoxLayout(self)
@@ -200,6 +204,10 @@ class SettingsPage(QWidget):
         yt_card = Card(title="3. Kết nối YouTube (OAuth 2.0)", parent=container)
         yt_layout = QVBoxLayout()
         yt_layout.setSpacing(12)
+        from app.services.youtube.auth import OAUTH_SCOPE_EXPLANATION
+        scope_notice = QLabel(OAUTH_SCOPE_EXPLANATION, yt_card)
+        scope_notice.setWordWrap(True)
+        yt_layout.addWidget(scope_notice)
 
         # client_secret.json picker
         lbl_secret = QLabel("Tệp cấu hình YouTube OAuth (client_secret.json):", yt_card)
@@ -224,11 +232,11 @@ class SettingsPage(QWidget):
         ch_layout = QHBoxLayout(ch_box)
 
         ch_info_box = QVBoxLayout()
-        self.lbl_yt_channel_name = QLabel("Kênh YouTube: Kênh mẫu DEV/TEST")
+        self.lbl_yt_channel_name = QLabel("Kênh YouTube: Chưa kết nối")
         self.lbl_yt_channel_name.setStyleSheet("font-weight: 600; color: #34d399;")
         ch_info_box.addWidget(self.lbl_yt_channel_name)
 
-        self.lbl_yt_channel_id = QLabel("ID kênh: fake-channel-dev | Trạng thái: Đã kết nối")
+        self.lbl_yt_channel_id = QLabel("ID kênh: - | Trạng thái: Chưa kết nối")
         self.lbl_yt_channel_id.setProperty("class", "hintLabel")
         ch_info_box.addWidget(self.lbl_yt_channel_id)
         ch_layout.addLayout(ch_info_box, stretch=1)
@@ -365,7 +373,9 @@ class SettingsPage(QWidget):
         if custom_prompt:
             self.edit_prompt.setPlainText(custom_prompt)
 
-        def_priv = self.services.settings.get("default_privacy", "private")
+        # Safe startup default; old persisted Public must not publish new jobs.
+        def_priv = 'private'
+        self.services.settings.set('default_privacy', def_priv)
         idx = self.combo_def_privacy.findData(def_priv)
         if idx >= 0:
             self.combo_def_privacy.setCurrentIndex(idx)
@@ -417,18 +427,21 @@ class SettingsPage(QWidget):
 
     @Slot()
     def _browse_client_secret(self) -> None:
-        f, _ = QFileDialog.getOpenFileName(
-            self, "Chọn tệp client_secret.json", "", "JSON Files (*.json);;All Files (*.*)"
-        )
-        if f:
-            p = Path(f)
-            if self._check_and_confirm_outside_project_path(p):
-                self.edit_client_secret.setText(str(p.resolve()))
-                if hasattr(self.services.youtube, "import_client_secret"):
-                    self.services.youtube.import_client_secret(p)
-                else:
-                    self.services.secrets.set("youtube_client_secret_path", str(p.resolve()))
-                QMessageBox.information(self, "Đã chọn", f"Đã cấu hình client_secret: {p.name}")
+        from app.errors import AppError
+        from app.services.youtube.auth import import_client_secret
+        selected, _ = QFileDialog.getOpenFileName(self, "Chọn client_secret.json OAuth Desktop", "", "JSON Files (*.json)")
+        if not selected:
+            return
+        try:
+            path = Path(selected)
+            if self.services.is_fake:
+                import_client_secret(path, self.services.secrets)
+            else:
+                self.services.youtube.import_client_secret(path)
+            self.services.connection.clear()
+            self.edit_client_secret.setText("Đã nhập OAuth Desktop client vào SecretStore")
+        except Exception as error:
+            self._connection_error(error.user_message if isinstance(error, AppError) else "Không đọc được OAuth Desktop client. Hãy chọn JSON loại Desktop hợp lệ.")
 
     @Slot()
     def _toggle_key_visibility(self) -> None:
@@ -481,25 +494,31 @@ class SettingsPage(QWidget):
             self.services.settings.set("default_privacy", val)
             self.state.privacy = val
 
+    def _show_channel(self) -> None:
+        connection = self.services.connection
+        channel = connection.channel
+        self.lbl_yt_channel_name.setText(f"Kênh YouTube: {channel.title}" if channel else "Kênh YouTube: Chưa kết nối")
+        self.lbl_yt_channel_id.setText(f"ID kênh: {channel.id} | Trạng thái: Đã kết nối" if channel else "ID kênh: - | Trạng thái: Chưa kết nối")
+        self.btn_connect_yt.setEnabled(not connection.busy)
+        self.btn_disconnect_yt.setEnabled(not connection.busy)
+        self.btn_browse_secret.setEnabled(not connection.busy)
+
+    def _connection_error(self, message: str) -> None:
+        self.lbl_yt_channel_id.setText(message)
+
     @Slot()
     def _connect_youtube(self) -> None:
-        try:
-            ch = self.services.youtube.connect()
-            self.lbl_yt_channel_name.setText(f"Kênh YouTube: {ch.title}")
-            self.lbl_yt_channel_id.setText(f"ID kênh: {ch.id} | Trạng thái: Đã kết nối")
-            QMessageBox.information(self, "Thành công", f"Đã kết nối với kênh: {ch.title}")
-        except Exception as exc:
-            QMessageBox.critical(self, "Lỗi kết nối", f"Lỗi xác thực YouTube: {exc}")
+        self.services.connection.connect_service(self.services.youtube)
 
     @Slot()
     def _disconnect_youtube(self) -> None:
+        if self.services.connection.busy:
+            return
+        self.services.connection.clear()
         try:
             self.services.youtube.disconnect()
-            self.lbl_yt_channel_name.setText("Kênh YouTube: Chưa kết nối")
-            self.lbl_yt_channel_id.setText("Trạng thái: Đã ngắt kết nối")
-            QMessageBox.information(self, "Đã ngắt kết nối", "Đã ngắt kết nối tài khoản YouTube.")
-        except Exception as exc:
-            QMessageBox.critical(self, "Lỗi", str(exc))
+        except Exception:
+            self._connection_error("Không xóa được token trong SecretStore. Hãy thử ngắt kết nối lại.")
 
     @Slot()
     def _open_logs_dir(self) -> None:

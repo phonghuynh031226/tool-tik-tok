@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Optional
+import logging
+import re
 
 from PySide6.QtCore import QObject, Signal
 
@@ -11,6 +13,15 @@ from app.contracts import (
     DownloadResult, GeneratedContent, JobStatus, UploadRequest,
     UploadResult, VideoMeta,
 )
+from app.services.youtube.validators import validate_title, validate_description, validate_tags
+from app.errors import ContentInvalid
+
+logger = logging.getLogger('TikTokYouTubeStudio.events')
+
+
+def format_hashtags(tags):
+    return ' '.join(dict.fromkeys('#' + word.lstrip('#') for tag in tags
+                    for word in tag.replace(',', ' ').split() if word.lstrip('#')))
 
 
 class JobState(QObject):
@@ -50,6 +61,7 @@ class JobState(QObject):
         self._error_message: Optional[str] = None
         self._history_id: Optional[int] = None
         self._dry_run: bool = False
+        self.dry_run_result = None
 
     # Properties
     @property
@@ -126,6 +138,7 @@ class JobState(QObject):
         return self._content
 
     def set_generated_content(self, content: GeneratedContent) -> None:
+        logger.info('content_generated — nội dung sẵn sàng xem và sửa')
         self._content = content
         self._title = content.title
         self._description = content.description
@@ -223,10 +236,21 @@ class JobState(QObject):
         return self._upload_result
 
     def set_upload_result(self, result: UploadResult) -> None:
+        if not re.fullmatch(r'[A-Za-z0-9_-]{11}', str(result.video_id)) or not re.fullmatch(r'UC[A-Za-z0-9_-]{22}', str(result.channel_id)):
+            raise ValueError('YouTube chưa trả mã video/kênh hợp lệ.')
+        self.dry_run_result = None
         self._upload_result = result
         self._status = JobStatus.UPLOADED
         self.upload_changed.emit(result)
         self.status_changed.emit(self._status.value)
+        self.job_changed.emit()
+
+    def set_dry_run_result(self, result) -> None:
+        self.dry_run_result = result
+        self._upload_result = None
+        self._status = JobStatus.CONTENT_READY
+        self.upload_changed.emit(result)
+        self.status_changed.emit('DRY_RUN')  # UI-only presentation, not a contract enum.
         self.job_changed.emit()
 
     @property
@@ -261,7 +285,17 @@ class JobState(QObject):
             return False, "Bắt buộc phải chọn đối tượng người xem (Dành cho trẻ em hay Không)."
         if not self._rights_confirmed:
             return False, "Bắt buộc phải xác nhận bạn có quyền sử dụng video này."
+        try:
+            validate_title(self._title.strip())
+            validate_description(self.upload_description())
+            validate_tags(self._tags)
+        except ContentInvalid as error:
+            return False, error.user_message
         return True, ""
+
+    def upload_description(self) -> str:
+        hashtags = format_hashtags(self._hashtags)
+        return self._description.strip() + ('\n\n' + hashtags if hashtags else '')
 
     def build_upload_request(self) -> UploadRequest:
         """Create an UploadRequest based on current state."""
@@ -273,10 +307,7 @@ class JobState(QObject):
         assert self._made_for_kids is not None
 
         # Format combined description with hashtags
-        desc = self._description.strip()
-        if self._hashtags:
-            clean_tags = " ".join(f"#{t.lstrip('#')}" for t in self._hashtags)
-            desc = f"{desc}\n\n{clean_tags}"
+        desc = self.upload_description()
 
         return UploadRequest(
             path=self._local_video_path,
@@ -360,5 +391,8 @@ class JobState(QObject):
         self._upload_result = None
         self._status = JobStatus.NEW
         self._error_message = None
+        self.dry_run_result = None
+        self.upload_changed.emit(None)
+        self.status_changed.emit(self._status.value)
         self.job_changed.emit()
 

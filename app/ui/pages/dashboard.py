@@ -17,7 +17,8 @@ from app.contracts import DownloadResult, GeneratedContent, VideoMeta
 from app.services.gemini import select_preferred_model
 from app.ui.components import Card, UploadConfirmDialog, VideoPlayerWidget
 from app.ui.services import ServiceContainer
-from app.ui.state import JobState
+from app.ui.state import JobState, format_hashtags
+from app.workers.service_workers import DryRunResult
 from app.workers import (
     DownloadVideoWorker, FetchMetaWorker, GenerateContentWorker,
     UploadYouTubeWorker,
@@ -43,6 +44,8 @@ class DashboardPage(QWidget):
 
         self._init_ui()
         self._connect_state()
+        self.services.add_mode_banner(self)
+        self.services.connection.changed.connect(self._refresh_channel_info)
         self._refresh_channel_info()
 
     def _init_ui(self) -> None:
@@ -294,9 +297,9 @@ class DashboardPage(QWidget):
         ch_layout = QHBoxLayout(self.channel_box)
         ch_layout.setContentsMargins(8, 8, 8, 8)
 
-        ch_icon = QLabel("🔴")
-        ch_icon.setStyleSheet("font-size: 16px;")
-        ch_layout.addWidget(ch_icon)
+        self.lbl_channel_indicator = QLabel("●")
+        self.lbl_channel_indicator.setStyleSheet("font-size: 16px;")
+        ch_layout.addWidget(self.lbl_channel_indicator)
 
         ch_text_box = QVBoxLayout()
         self.lbl_channel_title = QLabel("Kênh YouTube: Đang kiểm tra...")
@@ -409,6 +412,10 @@ class DashboardPage(QWidget):
         self.lbl_upload_status = QLabel("✅ Tải lên thành công!")
         self.lbl_upload_status.setStyleSheet("font-weight: 700; color: #ffffff; font-size: 14px;")
         res_layout.addWidget(self.lbl_upload_status)
+        self.lbl_upload_summary = QLabel(self.upload_result_box)
+        self.lbl_upload_summary.setWordWrap(True)
+        self.lbl_upload_summary.setTextFormat(Qt.TextFormat.PlainText)
+        res_layout.addWidget(self.lbl_upload_summary)
 
         self.lbl_upload_url = QLabel("Link: -")
         self.lbl_upload_url.setStyleSheet("color: #a7f3d0;")
@@ -506,7 +513,7 @@ class DashboardPage(QWidget):
             self.edit_desc.blockSignals(False)
 
         # Update tags
-        hash_str = " ".join(self.state.hashtags)
+        hash_str = format_hashtags(self.state.hashtags)
         if self.edit_hashtags.text() != hash_str:
             self.edit_hashtags.blockSignals(True)
             self.edit_hashtags.setText(hash_str)
@@ -754,13 +761,16 @@ class DashboardPage(QWidget):
     # ---------------------------------------------------------
     @Slot()
     def _refresh_channel_info(self) -> None:
-        try:
-            ch = self.services.youtube.connect()
-            self.lbl_channel_title.setText(f"Kênh YouTube: {ch.title}")
-            self.lbl_channel_id.setText(f"ID kênh: {ch.id}")
-        except Exception as exc:
-            self.lbl_channel_title.setText("Kênh YouTube: Chưa kết nối")
-            self.lbl_channel_id.setText(f"Chi tiết: {exc}")
+        channel = self.services.connection.channel
+        self.lbl_channel_title.setText(f"Kênh YouTube: {channel.title}" if channel else "Kênh YouTube: Chưa kết nối")
+        self.lbl_channel_id.setText(f"ID kênh: {channel.id}" if channel else "ID kênh: -")
+        checking = self.services.connection.busy and self.services.connection._upload_owner is None
+        authenticated = channel is not None and not self.services.is_fake
+        state = 'checking' if checking else ('connected' if authenticated else 'disconnected')
+        self.lbl_channel_indicator.setProperty('connectionState', state)
+        color = {'checking': '#facc15', 'connected': '#22c55e', 'disconnected': '#ef4444'}[state]
+        self.lbl_channel_indicator.setStyleSheet(f'font-size:20px;color:{color};')
+        self._update_upload_button_state()
 
     @Slot(int)
     def _on_privacy_changed(self, index: int) -> None:
@@ -795,7 +805,7 @@ class DashboardPage(QWidget):
         kids_ok = self.radio_kids_yes.isChecked() or self.radio_kids_no.isChecked()
         rights_ok = self.chk_rights.isChecked()
         has_video = bool(self.state.local_video_path)
-        can_click = title_ok and kids_ok and rights_ok and has_video
+        can_click = title_ok and kids_ok and rights_ok and has_video and self.services.upload_enabled(self.state.dry_run) and self.state.can_upload()[0]
         self.btn_upload.setEnabled(can_click)
         if self.state.dry_run:
             self.btn_upload.setText("🧪 Chạy thử đăng YouTube (Dry-run)")
@@ -804,6 +814,8 @@ class DashboardPage(QWidget):
 
     @Slot()
     def _on_upload_clicked(self) -> None:
+        if not self.services.upload_enabled(self.state.dry_run):
+            return
         can, reason = self.state.can_upload()
         if not can:
             QMessageBox.warning(self, "Chưa đủ điều kiện đăng", reason)
@@ -811,7 +823,10 @@ class DashboardPage(QWidget):
 
         try:
             req = self.state.build_upload_request()
-            channel = self.services.youtube.get_channel()
+            channel = self.services.connection.channel
+            if channel is None:
+                from app.contracts import ChannelInfo
+                channel = ChannelInfo("dry-run-channel", "Chạy thử — không đăng video")
         except Exception as exc:
             QMessageBox.critical(self, "Lỗi kiểm tra", str(exc))
             return
@@ -824,12 +839,14 @@ class DashboardPage(QWidget):
             return  # Cancelled by user in dialog
 
         # Proceed with upload in background worker
+        if not self.services.connection.begin_upload(self):
+            return
         self.btn_upload.setEnabled(False)
         self.btn_cancel_upload.setVisible(True)
         self.progress_upload.setVisible(True)
         self.progress_upload.setValue(10)
 
-        worker = UploadYouTubeWorker(self.services.youtube, req, dry_run=self.state.dry_run)
+        worker = UploadYouTubeWorker(self.services.youtube, req, dry_run=self.state.dry_run, confirmed_channel_id=channel.id, confirmed_channel_title=channel.title)
         self._active_upload_worker = worker
         worker.signals.progress.connect(lambda p: self.progress_upload.setValue(int(p * 100)))
         worker.signals.finished.connect(self._on_upload_finished)
@@ -839,10 +856,17 @@ class DashboardPage(QWidget):
 
     @Slot(object)
     def _on_upload_finished(self, result) -> None:
+        self.services.connection.end_upload(self)
+        if not isinstance(result, DryRunResult) and not self.services.valid_upload_result(result):
+            self._on_worker_error("YouTube chưa trả video ID hợp lệ; chưa thể báo thành công.")
+            return
         self.progress_upload.setValue(100)
-        self.btn_upload.setEnabled(True)
+        self._update_upload_button_state()
         self.btn_cancel_upload.setVisible(False)
         self._active_upload_worker = None
+        if isinstance(result, DryRunResult):
+            self.state.set_dry_run_result(result)
+            return
         self.state.set_upload_result(result)
 
         # Save to history repository
@@ -864,7 +888,8 @@ class DashboardPage(QWidget):
 
     @Slot()
     def _on_upload_cancelled(self) -> None:
-        self.btn_upload.setEnabled(True)
+        self.services.connection.end_upload(self)
+        self._update_upload_button_state()
         self.btn_cancel_upload.setVisible(False)
         self.progress_upload.setVisible(False)
         self._active_upload_worker = None
@@ -872,10 +897,18 @@ class DashboardPage(QWidget):
 
     @Slot(object)
     def _on_upload_result(self, result) -> None:
-        if result:
-            self.upload_result_box.setVisible(True)
-            self.lbl_upload_status.setText("✅ Đã đăng thành công lên YouTube!")
-            self.lbl_upload_url.setText(f"Liên kết: {result.url}")
+        simulated = isinstance(result, DryRunResult)
+        visible = simulated or (result is not None and self.services.valid_upload_result(result))
+        self.upload_result_box.setVisible(visible)
+        if not visible:
+            return
+        self.lbl_upload_status.setText("Chạy thử hoàn tất, chưa đăng YouTube" if simulated else "✅ Đã đăng thành công lên YouTube!")
+        self.lbl_upload_summary.setText(result.summary if simulated else "")
+        self.lbl_upload_summary.setVisible(simulated)
+        self.lbl_upload_url.setText("" if simulated else f"Liên kết: {result.url}")
+        self.lbl_upload_url.setVisible(not simulated)
+        self.btn_open_youtube.setVisible(not simulated)
+        self.btn_copy_link.setVisible(not simulated)
 
     @Slot()
     def _on_open_youtube_clicked(self) -> None:
@@ -894,12 +927,13 @@ class DashboardPage(QWidget):
     # ---------------------------------------------------------
     @Slot(str)
     def _on_worker_error(self, message: str) -> None:
+        self.services.connection.end_upload(self)
         if hasattr(self, "_ai_timer") and self._ai_timer.isActive():
             self._ai_timer.stop()
         self.btn_download.setEnabled(True)
         self.btn_cancel_download.setVisible(False)
         self.btn_generate_ai.setEnabled(True)
-        self.btn_upload.setEnabled(True)
+        self._update_upload_button_state()
         self.btn_cancel_upload.setVisible(False)
         self.progress_download.setVisible(False)
         self.progress_ai.setVisible(False)

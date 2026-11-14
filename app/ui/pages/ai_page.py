@@ -15,7 +15,7 @@ from app.contracts import GeneratedContent
 from app.services.gemini import select_preferred_model
 from app.ui.components import Card
 from app.ui.services import ServiceContainer
-from app.ui.state import JobState
+from app.ui.state import JobState, format_hashtags
 from app.workers import GenerateContentWorker
 
 
@@ -198,7 +198,7 @@ class AIPage(QWidget):
             self.edit_desc.setPlainText(self.state.description)
             self.edit_desc.blockSignals(False)
 
-        h_text = " ".join(self.state.hashtags)
+        h_text = format_hashtags(self.state.hashtags)
         if self.edit_hashtags.text() != h_text:
             self.edit_hashtags.blockSignals(True)
             self.edit_hashtags.setText(h_text)

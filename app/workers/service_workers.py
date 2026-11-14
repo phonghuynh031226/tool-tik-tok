@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import dataclass
+import logging
 from typing import Any, Mapping
 
 from PySide6.QtCore import QRunnable, Slot
@@ -14,6 +16,21 @@ from app.contracts import (
 )
 from app.core.cancel import CancelToken
 from app.workers.base import WorkerSignals
+
+logger = logging.getLogger('TikTokYouTubeStudio.events')
+
+
+@dataclass(frozen=True)
+class DryRunResult:
+    title: str
+    privacy: str
+    path: Path
+    channel: str
+
+    @property
+    def summary(self):
+        privacy = {'private': 'Riêng tư (Private)', 'public': 'Công khai (Public)', 'unlisted': 'Không công khai (Unlisted)'}[self.privacy]
+        return f'Kênh: {self.channel}\nTiêu đề: {self.title}\nChế độ: {privacy}\nTệp: {self.path}'
 
 
 class FetchMetaWorker(QRunnable):
@@ -140,11 +157,15 @@ class UploadYouTubeWorker(QRunnable):
         service: YouTubeService,
         request: UploadRequest,
         dry_run: bool = False,
+        confirmed_channel_id: str | None = None,
+        confirmed_channel_title: str = '',
     ) -> None:
         super().__init__()
         self.service = service
         self.request = request
         self.dry_run = dry_run
+        self.confirmed_channel_id = confirmed_channel_id
+        self.confirmed_channel_title = confirmed_channel_title
         self.signals = WorkerSignals()
         self.cancel_token = CancelToken()
         self.setAutoDelete(True)
@@ -162,18 +183,21 @@ class UploadYouTubeWorker(QRunnable):
             return
         try:
             if self.dry_run:
+                from app.services.youtube.validators import validate_upload_request
+                validate_upload_request(self.request)
                 # Dry-run: simulate the flow without calling actual upload API
                 import time
                 for p in (0.1, 0.4, 0.7, 1.0):
                     self.cancel_token.raise_if_cancelled()
                     time.sleep(0.05)
                     self._on_progress(p)
-                result = UploadResult(
-                    video_id="dry-run-001",
-                    url="https://www.youtube.com/watch?v=dry-run-001",
-                    channel_id="dry-run-channel",
-                )
+                result = DryRunResult(self.request.title, self.request.privacy, self.request.path,
+                    self.confirmed_channel_title or self.confirmed_channel_id or 'Chưa chọn kênh')
+                logger.info('dry_run_completed — chưa đăng YouTube')
             else:
+                if self.confirmed_channel_id is not None and hasattr(self.service, 'confirm_upload'):
+                    self.service.confirm_upload(self.request, made_for_kids=self.request.made_for_kids,
+                                                channel_id=self.confirmed_channel_id)
                 result = self.service.upload(
                     self.request,
                     on_progress=self._on_progress,
@@ -187,7 +211,8 @@ class UploadYouTubeWorker(QRunnable):
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
             else:
-                self.signals.error.emit(str(exc) or "Lỗi tải video lên YouTube")
+                from app.errors import AppError
+                self.signals.error.emit(exc.user_message if isinstance(exc, AppError) else 'Không thể tải video lên YouTube. Hãy kiểm tra kết nối và nội dung.')
 
 
 class YtDlpUpdateWorker(QRunnable):
@@ -256,6 +281,8 @@ class YouTubeConnectWorker(QRunnable):
             return
         try:
             channel = self.service.connect()
+            channel = self.service.get_channel()
+            logger.info('youtube_connected — đã xác thực kênh')
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
             else:
@@ -264,4 +291,6 @@ class YouTubeConnectWorker(QRunnable):
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
             else:
-                self.signals.error.emit(str(exc) or "Không thể kết nối kênh YouTube")
+                from app.errors import AppError
+                message = exc.user_message if isinstance(exc, AppError) else 'Không thể kết nối kênh YouTube. Hãy kiểm tra OAuth Desktop client và mạng.'
+                self.signals.error.emit(message)

@@ -66,4 +66,5 @@ def configure_logging(path: Path | None = None, *, max_bytes: int = 1024 * 1024,
     logger.addHandler(handler)
     logger.setLevel(level)
     logger.propagate = False
+    logger.info('Ứng dụng khởi động; logging đã bật.')
     return logger

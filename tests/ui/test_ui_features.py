@@ -21,6 +21,13 @@ from app.ui.services import ServiceContainer
 from app.workers import DownloadVideoWorker, TaskWorker, UploadYouTubeWorker, YtDlpUpdateWorker
 
 
+@pytest.fixture(autouse=True)
+def mock_dummy_media_decode(monkeypatch):
+    # These are form/worker tests with arbitrary bytes, not media playback tests.
+    from app.ui.components.video_player import VideoPlayerWidget
+    monkeypatch.setattr(VideoPlayerWidget, 'load_video', lambda self, path: None)
+
+
 @pytest.fixture
 def test_container(tmp_path):
     secrets = FakeSecretStore()
@@ -42,6 +49,10 @@ def test_title_validation_and_upload_button_locking(qtbot, test_container, tmp_p
     window.show()
 
     dashboard = window.page_dashboard
+
+    # This test isolates content validation. Fake services may only simulate;
+    # real upload additionally requires the authenticated shared channel.
+    dashboard.chk_dry_run.setChecked(True)
 
     # Initially, upload button is disabled
     assert not dashboard.btn_upload.isEnabled()
@@ -182,12 +193,13 @@ def test_dry_run_mode_execution(qtbot, test_container, tmp_path):
         dashboard.btn_upload.click()
 
     # Wait until finished
-    qtbot.waitUntil(lambda: window.job_state.status == JobStatus.UPLOADED, timeout=3000)
+    qtbot.waitUntil(lambda: window.job_state.dry_run_result is not None, timeout=3000)
 
     # Real youtube.upload was NEVER called
     test_container.youtube.upload.assert_not_called()
-    assert window.job_state.upload_result is not None
-    assert "dry-run" in window.job_state.upload_result.video_id
+    assert window.job_state.upload_result is None
+    assert window.job_state.status != JobStatus.UPLOADED
+    assert not getattr(window.job_state.dry_run_result, 'url', None)
 
 
 def test_cancel_download_and_upload_workers(qtbot, test_container, tmp_path):
