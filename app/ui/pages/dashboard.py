@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QThreadPool, QUrl, Qt, Slot
+from PySide6.QtCore import QThreadPool, QTimer, QUrl, Qt, Slot
 from PySide6.QtGui import QClipboard, QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout,
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.contracts import DownloadResult, GeneratedContent, VideoMeta
+from app.services.gemini import select_preferred_model
 from app.ui.components import Card, UploadConfirmDialog, VideoPlayerWidget
 from app.ui.services import ServiceContainer
 from app.ui.state import JobState
@@ -438,13 +439,28 @@ class DashboardPage(QWidget):
         outer_layout.addWidget(scroll)
 
     def _populate_models(self) -> None:
+        saved_model = self.services.settings.get("gemini_model") if self.services.settings else None
         try:
             models = self.services.generator.list_models()
         except Exception:
             models = ["gemini-2.0-flash", "gemini-1.5-pro"]
+
+        chosen, switched = select_preferred_model(models, saved_model)
         self.combo_model.clear()
         for m in models:
             self.combo_model.addItem(m, m)
+        idx = self.combo_model.findData(chosen)
+        if idx >= 0:
+            self.combo_model.setCurrentIndex(idx)
+        if switched and saved_model:
+            if self.services.settings:
+                self.services.settings.set("gemini_model", chosen)
+            QMessageBox.information(
+                self,
+                "Cập nhật mô hình AI",
+                f"Mô hình đã lưu '{saved_model}' không còn khả dụng trong danh sách Gemini. "
+                f"Hệ thống đã tự động chuyển sang mô hình ưu tiên '{chosen}'.",
+            )
 
     def _connect_state(self) -> None:
         self.state.job_changed.connect(self._sync_from_state)
@@ -666,6 +682,12 @@ class DashboardPage(QWidget):
             "video_path": str(self.state.local_video_path) if self.state.local_video_path else None,
         }
 
+        # UI Safety watchdog timer (65s)
+        self._ai_timer = QTimer(self)
+        self._ai_timer.setSingleShot(True)
+        self._ai_timer.timeout.connect(self._on_generate_ui_timeout)
+        self._ai_timer.start(65000)
+
         worker = GenerateContentWorker(self.services.generator, self.state.meta, settings)
         worker.signals.progress.connect(lambda p: self.progress_ai.setValue(int(p * 100)))
         worker.signals.finished.connect(self._on_generate_finished)
@@ -674,11 +696,25 @@ class DashboardPage(QWidget):
 
     @Slot(object)
     def _on_generate_finished(self, content: GeneratedContent) -> None:
+        if hasattr(self, "_ai_timer") and self._ai_timer.isActive():
+            self._ai_timer.stop()
         self.progress_ai.setValue(100)
         self.btn_generate_ai.setEnabled(True)
         self.btn_generate_ai.setText("✨ Tạo lại nội dung")
         self.progress_ai.setVisible(False)
         self.state.set_generated_content(content)
+
+    @Slot()
+    def _on_generate_ui_timeout(self) -> None:
+        if not self.btn_generate_ai.isEnabled():
+            self.progress_ai.setVisible(False)
+            self.btn_generate_ai.setEnabled(True)
+            QMessageBox.critical(
+                self,
+                "Quá thời gian phản hồi",
+                "Quá thời gian chờ tạo nội dung AI (timeout 60 giây). "
+                "Thao tác đã bị dừng. Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau.",
+            )
 
     @Slot()
     def _on_restore_original_clicked(self) -> None:
@@ -858,6 +894,8 @@ class DashboardPage(QWidget):
     # ---------------------------------------------------------
     @Slot(str)
     def _on_worker_error(self, message: str) -> None:
+        if hasattr(self, "_ai_timer") and self._ai_timer.isActive():
+            self._ai_timer.stop()
         self.btn_download.setEnabled(True)
         self.btn_cancel_download.setVisible(False)
         self.btn_generate_ai.setEnabled(True)

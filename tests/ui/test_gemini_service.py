@@ -11,7 +11,8 @@ from app.contracts import GeneratedContent, VideoMeta
 from app.errors import AuthExpired, ContentInvalid, NetworkError, QuotaExceeded
 from app.services.fakes import FakeSecretStore, FakeSettingsStore
 from app.services.gemini.generator import (
-    GeminiContentGenerator, validate_and_sanitize_content,
+    GeminiContentGenerator, select_preferred_model,
+    validate_and_sanitize_content,
 )
 
 
@@ -272,4 +273,193 @@ def test_files_api_flag_behavior(sample_meta, tmp_path):
     generator.generate(sample_meta, settings={"video_path": str(fake_video), "analyze_video_file": True})
     mock_client.files.upload.assert_called_once_with(file=str(fake_video))
     mock_client.files.delete.assert_called_once_with(name="files/test-video-id")
+
+
+def test_error_404_model_not_found_no_retry(sample_meta):
+    """Test that HTTP 404 (model not found) fails immediately without retrying."""
+    mock_client = MagicMock()
+    err_404 = errors.APIError(404, {"error": {"message": "models/gemini-deprecated is not found"}})
+    mock_client.models.generate_content.side_effect = err_404
+
+    generator = GeminiContentGenerator(
+        api_key="valid-key",
+        client_factory=lambda _: mock_client,
+    )
+
+    with pytest.raises(ContentInvalid) as exc:
+        generator.generate(sample_meta, settings={"model": "gemini-deprecated"})
+
+    msg = str(exc.value)
+    assert "404" in msg
+    assert "không tồn tại hoặc đã ngừng hỗ trợ" in msg
+    assert "gemini-deprecated" in msg
+    # Crucial: Must NOT retry 404! Exactly 1 call
+    assert mock_client.models.generate_content.call_count == 1
+
+
+def test_error_400_invalid_argument_no_retry(sample_meta):
+    """Test that HTTP 400 (invalid request / schema unsupported) fails immediately without retrying."""
+    mock_client = MagicMock()
+    err_400 = errors.APIError(400, {"error": {"message": "response_schema is not supported for this model"}})
+    mock_client.models.generate_content.side_effect = err_400
+
+    generator = GeminiContentGenerator(
+        api_key="valid-key",
+        client_factory=lambda _: mock_client,
+    )
+
+    with pytest.raises(ContentInvalid) as exc:
+        generator.generate(sample_meta, settings={"model": "gemini-custom"})
+
+    msg = str(exc.value)
+    assert "400" in msg
+    assert "JSON schema" in msg or "không hỗ trợ" in msg
+    assert "gemini-custom" in msg
+    # Must NOT retry 400! Exactly 1 call
+    assert mock_client.models.generate_content.call_count == 1
+
+
+def test_error_401_403_permission_denied_no_retry(sample_meta):
+    """Test that HTTP 403 (permission denied) fails immediately without retrying."""
+    mock_client = MagicMock()
+    err_403 = errors.APIError(403, {"error": {"message": "PERMISSION_DENIED: The caller does not have permission"}})
+    mock_client.models.generate_content.side_effect = err_403
+
+    generator = GeminiContentGenerator(
+        api_key="forbidden-key",
+        client_factory=lambda _: mock_client,
+    )
+
+    with pytest.raises(AuthExpired) as exc:
+        generator.generate(sample_meta, settings={})
+
+    msg = str(exc.value)
+    assert "403" in msg or "quyền truy cập" in msg
+    assert mock_client.models.generate_content.call_count == 1
+
+
+def test_error_429_quota_exceeded_retries_and_raises(sample_meta):
+    """Test that HTTP 429 retries with backoff and raises QuotaExceeded."""
+    mock_client = MagicMock()
+    err_429 = errors.APIError(429, {"error": {"message": "RESOURCE_EXHAUSTED: quota exceeded"}})
+    mock_client.models.generate_content.side_effect = err_429
+
+    generator = GeminiContentGenerator(
+        api_key="valid-key",
+        client_factory=lambda _: mock_client,
+    )
+
+    with patch("time.sleep") as mock_sleep:
+        with pytest.raises(QuotaExceeded) as exc:
+            generator.generate(sample_meta, settings={})
+
+    msg = str(exc.value)
+    assert "429" in msg or "hạn mức" in msg
+    assert mock_client.models.generate_content.call_count == 3
+    assert mock_sleep.call_count == 2
+
+
+def test_error_5xx_server_error_retries_and_raises(sample_meta):
+    """Test that HTTP 500 retries with backoff and raises NetworkError."""
+    mock_client = MagicMock()
+    err_500 = errors.APIError(500, {"error": {"message": "Internal server error"}})
+    mock_client.models.generate_content.side_effect = err_500
+
+    generator = GeminiContentGenerator(
+        api_key="valid-key",
+        client_factory=lambda _: mock_client,
+    )
+
+    with patch("time.sleep") as mock_sleep:
+        with pytest.raises(NetworkError) as exc:
+            generator.generate(sample_meta, settings={})
+
+    msg = str(exc.value)
+    assert "500" in msg
+    assert "sự cố nội bộ" in msg
+    assert mock_client.models.generate_content.call_count == 3
+    assert mock_sleep.call_count == 2
+
+
+def test_error_network_connection_retries_and_raises(sample_meta):
+    """Test that genuine network/DNS failure retries and raises NetworkError."""
+    mock_client = MagicMock()
+    conn_err = ConnectionError("Failed to establish connection: [Errno 11001] getaddrinfo failed")
+    mock_client.models.generate_content.side_effect = conn_err
+
+    generator = GeminiContentGenerator(
+        api_key="valid-key",
+        client_factory=lambda _: mock_client,
+    )
+
+    with patch("time.sleep") as mock_sleep:
+        with pytest.raises(NetworkError) as exc:
+            generator.generate(sample_meta, settings={})
+
+    msg = str(exc.value)
+    assert "sự cố mạng" in msg or "kết nối" in msg
+    assert mock_client.models.generate_content.call_count == 3
+    assert mock_sleep.call_count == 2
+
+
+def test_generate_timeout_60s(sample_meta):
+    """Test that timeout (e.g. 60s) raises NetworkError with timeout message."""
+    mock_client = MagicMock()
+
+    import time
+    def slow_generate(*args, **kwargs):
+        time.sleep(0.5)
+        return MagicMock()
+
+    mock_client.models.generate_content.side_effect = slow_generate
+
+    generator = GeminiContentGenerator(
+        api_key="valid-key",
+        client_factory=lambda _: mock_client,
+    )
+
+    with pytest.raises(NetworkError) as exc:
+        # Pass a small timeout for fast unit testing
+        generator.generate(sample_meta, settings={"timeout": 0.1})
+
+    msg = str(exc.value)
+    assert "timeout" in msg.lower() or "quá thời gian" in msg.lower()
+
+
+def test_select_preferred_model():
+    """Test priority selection of default models and handling of missing saved models."""
+    # 1. Prioritize flash-lite when available
+    models = ["gemma-7b-it", "gemini-1.5-pro", "gemini-2.0-flash", "gemini-2.0-flash-lite"]
+    chosen, switched = select_preferred_model(models)
+    assert chosen == "gemini-2.0-flash-lite"
+    assert switched is False
+
+    # 2. Prioritize flash when flash-lite is not available
+    models_no_lite = ["gemma-2-9b", "gemini-1.5-pro", "gemini-1.5-flash"]
+    chosen, switched = select_preferred_model(models_no_lite)
+    assert chosen == "gemini-1.5-flash"
+    assert switched is False
+
+    # 3. Gemma is never auto-selected if another model is available
+    models_with_gemma = ["gemma-2-27b", "gemini-1.5-pro"]
+    chosen, switched = select_preferred_model(models_with_gemma)
+    assert chosen == "gemini-1.5-pro"
+    assert "gemma" not in chosen
+
+    # 4. Respect saved model if still present in models list
+    chosen, switched = select_preferred_model(
+        ["gemini-2.0-flash", "gemini-1.5-pro"],
+        saved_model="gemini-1.5-pro",
+    )
+    assert chosen == "gemini-1.5-pro"
+    assert switched is False
+
+    # 5. When saved model is deprecated/missing, switch to preferred and signal switched=True
+    chosen, switched = select_preferred_model(
+        ["gemini-2.0-flash", "gemini-1.5-pro"],
+        saved_model="gemini-1.0-pro",
+    )
+    assert chosen == "gemini-2.0-flash"
+    assert switched is True
+
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtCore import QThreadPool, Qt, Slot
+from PySide6.QtCore import QThreadPool, QTimer, Qt, Slot
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QComboBox, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox,
@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.contracts import GeneratedContent
+from app.services.gemini import select_preferred_model
 from app.ui.components import Card
 from app.ui.services import ServiceContainer
 from app.ui.state import JobState
@@ -68,12 +69,21 @@ class AIPage(QWidget):
         s_layout.addWidget(lbl_model, 0, 0)
 
         self.combo_model = QComboBox(settings_card)
+        saved_model = (
+            self.services.settings.get("gemini_model")
+            if self.services.settings
+            else None
+        )
         try:
             models = self.services.generator.list_models()
         except Exception:
             models = ["gemini-2.0-flash", "gemini-1.5-pro"]
+        chosen, _ = select_preferred_model(models, saved_model)
         for m in models:
             self.combo_model.addItem(m, m)
+        idx = self.combo_model.findData(chosen)
+        if idx >= 0:
+            self.combo_model.setCurrentIndex(idx)
         s_layout.addWidget(self.combo_model, 0, 1)
 
         lbl_tone = QLabel("Phong cách viết:", settings_card)
@@ -235,6 +245,12 @@ class AIPage(QWidget):
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(20)
 
+        # UI Safety watchdog timer (65s)
+        self._ai_timer = QTimer(self)
+        self._ai_timer.setSingleShot(True)
+        self._ai_timer.timeout.connect(self._on_ui_timeout)
+        self._ai_timer.start(65000)
+
         settings = {
             "model": self.combo_model.currentData() or "gemini-2.0-flash",
             "tone": self.combo_tone.currentData() or "engaging",
@@ -249,6 +265,8 @@ class AIPage(QWidget):
 
     @Slot(object)
     def _on_finished(self, content: GeneratedContent) -> None:
+        if hasattr(self, "_ai_timer") and self._ai_timer.isActive():
+            self._ai_timer.stop()
         self.progress_bar.setValue(100)
         self.btn_generate.setEnabled(True)
         self.progress_bar.setVisible(False)
@@ -257,9 +275,23 @@ class AIPage(QWidget):
 
     @Slot(str)
     def _on_error(self, err: str) -> None:
+        if hasattr(self, "_ai_timer") and self._ai_timer.isActive():
+            self._ai_timer.stop()
         self.btn_generate.setEnabled(True)
         self.progress_bar.setVisible(False)
         QMessageBox.critical(self, "Lỗi", f"Lỗi sinh nội dung AI: {err}")
+
+    @Slot()
+    def _on_ui_timeout(self) -> None:
+        if not self.btn_generate.isEnabled():
+            self.progress_bar.setVisible(False)
+            self.btn_generate.setEnabled(True)
+            QMessageBox.critical(
+                self,
+                "Quá thời gian phản hồi",
+                "Quá thời gian chờ tạo nội dung AI (timeout 60 giây). "
+                "Thao tác đã bị dừng. Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau.",
+            )
 
     @Slot()
     def _on_copy_all(self) -> None:

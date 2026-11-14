@@ -90,18 +90,21 @@ class DownloadVideoWorker(QRunnable):
 
 
 class GenerateContentWorker(QRunnable):
-    """Worker to generate title, description, tags via AI."""
+    """Worker to generate title, description, tags via AI with timeout guard."""
 
     def __init__(
         self,
         generator: ContentGenerator,
         meta: VideoMeta,
         settings: Mapping[str, Any] | None = None,
+        timeout: float = 60.0,
     ) -> None:
         super().__init__()
         self.generator = generator
         self.meta = meta
-        self.settings = settings or {}
+        self.timeout = timeout
+        self.settings = dict(settings or {})
+        self.settings.setdefault("timeout", timeout)
         self.signals = WorkerSignals()
         self.cancel_token = CancelToken()
         self.setAutoDelete(True)
