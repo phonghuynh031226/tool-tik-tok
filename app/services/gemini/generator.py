@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import logging
 import os
@@ -15,7 +16,8 @@ from pydantic import BaseModel, Field
 from app.contracts import ContentGenerator, GeneratedContent, SecretStore, SettingsStore, VideoMeta
 from app.errors import AuthExpired, ContentInvalid, NetworkError, QuotaExceeded
 
-logger = logging.getLogger(__name__)
+# Use child logger of TikTokYouTubeStudio so logs pass through RedactingFilter in production
+logger = logging.getLogger("TikTokYouTubeStudio.gemini")
 
 # Default prompt template in Vietnamese
 DEFAULT_PROMPT_TEMPLATE = (
@@ -129,6 +131,139 @@ def validate_and_sanitize_content(
     )
 
 
+def select_preferred_model(
+    models: list[str], saved_model: Optional[str] = None
+) -> tuple[str, bool]:
+    """Select preferred default model according to priority rules:
+    - Never auto-select 'gemma' models.
+    - Prioritize models containing 'gemini' and 'flash'.
+    - Highest priority: models containing 'flash-lite' (or 'lite').
+    - If saved_model is provided and exists in models, keep it (returns (saved_model, False)).
+    - If saved_model is not in models, switch to preferred model and return (model, True) to notify user.
+    """
+    if not models:
+        return "gemini-2.0-flash", False
+
+    # Filter out gemma models from automatic selection
+    non_gemma = [m for m in models if "gemma" not in m.casefold()]
+    candidate_pool = non_gemma if non_gemma else list(models)
+
+    # If saved_model is valid and still in models list, respect it
+    if saved_model and saved_model in models:
+        return saved_model, False
+
+    # Priority 1: contains 'gemini' and 'flash' and ('flash-lite' or 'lite')
+    p1 = [
+        m
+        for m in candidate_pool
+        if "gemini" in m.casefold()
+        and "flash" in m.casefold()
+        and ("flash-lite" in m.casefold() or "lite" in m.casefold())
+    ]
+    if p1:
+        chosen = p1[0]
+    else:
+        # Priority 2: contains 'gemini' and 'flash'
+        p2 = [
+            m
+            for m in candidate_pool
+            if "gemini" in m.casefold() and "flash" in m.casefold()
+        ]
+        if p2:
+            chosen = p2[0]
+        else:
+            # Priority 3: contains 'gemini'
+            p3 = [m for m in candidate_pool if "gemini" in m.casefold()]
+            if p3:
+                chosen = p3[0]
+            else:
+                chosen = candidate_pool[0]
+
+    # Did we have a saved_model that is no longer present?
+    switched = bool(saved_model and saved_model not in models)
+    return chosen, switched
+
+
+def _extract_http_code(exc: Exception) -> Optional[int]:
+    """Extract HTTP status code from exception if available."""
+    code = getattr(exc, "code", None)
+    if isinstance(code, int):
+        return code
+    status_code = getattr(exc, "status_code", None)
+    if isinstance(status_code, int):
+        return status_code
+
+    err_str = str(exc)
+    match = re.search(r"\b(4\d\d|5\d\d)\b", err_str)
+    if match:
+        try:
+            return int(match.group(1))
+        except ValueError:
+            pass
+    return None
+
+
+def is_retryable_error(exc: Exception) -> bool:
+    """Check if error is retryable.
+    Only network errors, 429 (rate limit), and 5xx (Google server error) are retryable.
+    400, 401, 403, 404 and content validation errors MUST NOT be retried.
+    """
+    if isinstance(exc, (AuthExpired, ContentInvalid)):
+        return False
+
+    code = _extract_http_code(exc)
+    if code in (400, 401, 403, 404):
+        return False
+    if code == 429 or (isinstance(code, int) and 500 <= code <= 599):
+        return True
+
+    err_str = str(exc).casefold()
+    # Explicit non-retryable keywords
+    if any(
+        k in err_str
+        for k in (
+            "404",
+            "not found",
+            "not_found",
+            "deprecated",
+            "400",
+            "invalid_argument",
+            "schema",
+            "401",
+            "403",
+            "api_key_invalid",
+            "permission_denied",
+            "unauthenticated",
+        )
+    ):
+        return False
+
+    # Retryable: network, connection, timeout, 5xx
+    if isinstance(exc, (TimeoutError, ConnectionError, OSError)):
+        return True
+    if any(
+        k in err_str
+        for k in (
+            "timeout",
+            "connect",
+            "connection",
+            "network",
+            "dns",
+            "reset",
+            "refused",
+            "unavailable",
+            "server error",
+            "500",
+            "502",
+            "503",
+            "504",
+        )
+    ):
+        return True
+
+    return False
+
+
 class GeminiContentGenerator(ContentGenerator):
     """Production ContentGenerator using google-genai SDK."""
 
@@ -166,24 +301,143 @@ class GeminiContentGenerator(ContentGenerator):
         from google import genai
         return genai.Client(api_key=api_key)
 
-    def _handle_api_error(self, exc: Exception) -> None:
-        """Map SDK errors to safe Vietnamese application exceptions."""
+    def _handle_api_error(self, exc: Exception, model_name: str = "") -> None:
+        """Map SDK errors to safe Vietnamese application exceptions and log details.
+        Logs exception class, HTTP code, and model name.
+        Does NOT log API keys, tokens, or sensitive payloads.
+        """
+        model_display = model_name or "mặc định"
+        code = _extract_http_code(exc)
         err_str = str(exc)
-        code = getattr(exc, "code", None)
+        exc_type = type(exc).__name__
 
-        if code in (401, 403) or "API_KEY_INVALID" in err_str or "PERMISSION_DENIED" in err_str or "UNAUTHENTICATED" in err_str:
+        # 1. 404: Model not found or deprecated
+        if code == 404 or (
+            code is None
+            and (
+                "not found" in err_str.lower()
+                or "is not found" in err_str.lower()
+            )
+        ):
+            logger.error(
+                "Gemini API error: [%s] HTTP 404 - Model '%s' does not exist or deprecated",
+                exc_type,
+                model_display,
+            )
+            raise ContentInvalid(
+                f"Mô hình AI '{model_display}' không tồn tại hoặc đã ngừng hỗ trợ (mã 404). "
+                f"Vui lòng vào Cài đặt để chọn lại mô hình Gemini khác."
+            ) from exc
+
+        # 2. 400: Invalid request or response schema / JSON not supported by model
+        if code == 400 or (
+            code is None
+            and (
+                "schema" in err_str.lower()
+                or "invalid argument" in err_str.lower()
+                or "invalid_argument" in err_str.lower()
+            )
+        ):
+            logger.error(
+                "Gemini API error: [%s] HTTP 400 - Invalid request / unsupported schema for model '%s'",
+                exc_type,
+                model_display,
+            )
+            raise ContentInvalid(
+                f"Mô hình AI '{model_display}' không hỗ trợ định dạng dữ liệu có cấu trúc (JSON schema) hoặc yêu cầu không hợp lệ (mã 400). "
+                f"Vui lòng chọn mô hình Gemini Flash thế hệ mới trong Cài đặt."
+            ) from exc
+
+        # 3. 401 / 403: Invalid API key or permission denied
+        if code in (401, 403) or (
+            code is None
+            and (
+                "api_key_invalid" in err_str.lower()
+                or "permission_denied" in err_str.lower()
+                or "unauthenticated" in err_str.lower()
+            )
+        ):
+            logger.error(
+                "Gemini API error: [%s] HTTP %s - Authentication or permission denied for model '%s'",
+                exc_type,
+                code or "401/403",
+                model_display,
+            )
             raise AuthExpired(
-                "Khóa API Gemini không hợp lệ hoặc đã hết hạn. Vui lòng kiểm tra lại trong Cài đặt."
+                f"Khóa API Gemini không hợp lệ hoặc không có quyền truy cập (mã {code or '401/403'}). "
+                f"Vui lòng kiểm tra và cập nhật lại API Key trong Cài đặt."
             ) from exc
 
-        if code == 429 or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.casefold():
+        # 4. 429: Quota exceeded / Rate limit
+        if code == 429 or (
+            code is None
+            and (
+                "resource_exhausted" in err_str.lower()
+                or "quota" in err_str.lower()
+                or "rate limit" in err_str.lower()
+            )
+        ):
+            logger.warning(
+                "Gemini API error: [%s] HTTP 429 - Quota or rate limit exceeded for model '%s'",
+                exc_type,
+                model_display,
+            )
             raise QuotaExceeded(
-                "Đã hết hạn mức dịch vụ Gemini. Vui lòng thử lại sau khi hạn mức được cấp lại."
+                "Đã vượt quá hạn mức sử dụng Gemini (mã 429). "
+                "Vui lòng chờ ít phút rồi thử lại hoặc nâng cấp gói hạn mức."
             ) from exc
 
-        # Other network or temporary server errors
-        raise NetworkError(
-            "Không thể kết nối đến máy chủ Google Gemini. Vui lòng kiểm tra kết nối mạng và thử lại."
+        # 5. 5xx: Google server error
+        if (isinstance(code, int) and 500 <= code <= 599) or (
+            code is None and "server error" in err_str.lower()
+        ):
+            logger.error(
+                "Gemini API error: [%s] HTTP %s - Google server internal error for model '%s'",
+                exc_type,
+                code,
+                model_display,
+            )
+            raise NetworkError(
+                f"Máy chủ Google Gemini đang gặp sự cố nội bộ (mã {code or 500}). "
+                f"Vui lòng chờ ít phút và thử lại sau."
+            ) from exc
+
+        # 6. Timeout
+        if isinstance(exc, TimeoutError) or "timeout" in err_str.lower():
+            logger.error(
+                "Gemini network error: [%s] Timeout for model '%s'",
+                exc_type,
+                model_display,
+            )
+            raise NetworkError(
+                "Quá thời gian phản hồi từ máy chủ Google Gemini (timeout 60 giây). "
+                "Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau."
+            ) from exc
+
+        # 7. Network / DNS / socket error
+        if isinstance(exc, (ConnectionError, OSError)) or any(
+            k in err_str.lower()
+            for k in ("connection", "connect", "dns", "getaddrinfo", "network")
+        ):
+            logger.error(
+                "Gemini network error: [%s] Network/DNS connection failure for model '%s'",
+                exc_type,
+                model_display,
+            )
+            raise NetworkError(
+                "Không thể kết nối đến máy chủ Google Gemini do sự cố mạng. "
+                "Vui lòng kiểm tra kết nối Internet và thử lại."
+            ) from exc
+
+        # Default fallback: report error without misleading network message
+        logger.error(
+            "Gemini unexpected error: [%s] HTTP %s - Model '%s'",
+            exc_type,
+            code,
+            model_display,
+        )
+        raise ContentInvalid(
+            f"Không thể tạo nội dung với mô hình '{model_display}' ({exc_type}): {err_str}"
         ) from exc
 
     def list_models(self) -> list[str]:
@@ -203,7 +457,7 @@ class GeminiContentGenerator(ContentGenerator):
         except AuthExpired:
             raise
         except Exception as exc:
-            self._handle_api_error(exc)
+            self._handle_api_error(exc, "")
             return []
 
     def test_connection(self) -> bool:
@@ -218,11 +472,11 @@ class GeminiContentGenerator(ContentGenerator):
         except AuthExpired:
             raise
         except Exception as exc:
-            self._handle_api_error(exc)
+            self._handle_api_error(exc, "")
             return False
 
     def generate(self, meta: VideoMeta, settings: Mapping[str, Any]) -> GeneratedContent:
-        """Generate optimized YouTube Shorts metadata with validation and retry."""
+        """Generate optimized YouTube Shorts metadata with validation, timeout, and retry."""
         client = self._get_client()
 
         # Resolve model name
@@ -273,23 +527,53 @@ class GeminiContentGenerator(ContentGenerator):
         if uploaded_file is not None:
             contents.append(uploaded_file)
 
-        # Retry logic: up to 2 re-generations if content is invalid or temporary failure
+        # Timeout setting (default: 60s)
+        timeout_seconds = float(settings.get("timeout", 60.0))
+        deadline = time.monotonic() + timeout_seconds
+
+        # Retry logic: retry only for network errors, 429, and 5xx (up to 3 attempts)
         max_attempts = 3
         last_error: Optional[Exception] = None
 
         try:
             for attempt in range(max_attempts):
-                try:
-                    response = client.models.generate_content(
-                        model=model_name,
-                        contents=contents,
-                        config=config,
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    logger.error(
+                        "Gemini Generate timed out after %.1fs for model '%s'",
+                        timeout_seconds,
+                        model_name,
                     )
+                    raise NetworkError(
+                        f"Quá thời gian phản hồi từ máy chủ Google Gemini (timeout {int(timeout_seconds)} giây). "
+                        f"Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau."
+                    )
+
+                try:
+                    # Run SDK call with remaining timeout in worker thread
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                        future = executor.submit(
+                            client.models.generate_content,
+                            model=model_name,
+                            contents=contents,
+                            config=config,
+                        )
+                        try:
+                            response = future.result(timeout=remaining)
+                        except concurrent.futures.TimeoutError as te:
+                            logger.error(
+                                "Gemini generate_content call timed out after %.1fs",
+                                remaining,
+                            )
+                            raise TimeoutError(
+                                f"Quá thời gian phản hồi từ máy chủ Google Gemini (timeout {int(timeout_seconds)} giây)."
+                            ) from te
+
                     raw_text = getattr(response, "text", "") or ""
                     try:
                         data = json.loads(raw_text)
                     except Exception as json_err:
-                        if attempt < max_attempts - 1:
+                        if attempt < max_attempts - 1 and (deadline - time.monotonic()) > 2.0:
                             time.sleep(0.5 * (2**attempt))
                             continue
                         raise ContentInvalid("Dữ liệu JSON sinh từ AI không hợp lệ.") from json_err
@@ -306,7 +590,7 @@ class GeminiContentGenerator(ContentGenerator):
                         return sanitized
 
                     # If not valid after auto-trim, retry with clarification in prompt
-                    if attempt < max_attempts - 1:
+                    if attempt < max_attempts - 1 and (deadline - time.monotonic()) > 2.0:
                         contents = [
                             f"{prompt}\nLƯU Ý LỖI LẦN TRƯỚC: {reason}. Bắt buộc tiêu đề ≤100 ký tự, mô tả ≤5000 bytes, không dùng ký tự < >."
                         ]
@@ -320,22 +604,27 @@ class GeminiContentGenerator(ContentGenerator):
                 except (AuthExpired, QuotaExceeded, ContentInvalid):
                     raise
                 except Exception as exc:
-                    err_str = str(exc)
-                    code = getattr(exc, "code", None)
-                    if code in (401, 403) or "API_KEY_INVALID" in err_str:
-                        self._handle_api_error(exc)
-                    if code == 429 or "RESOURCE_EXHAUSTED" in err_str:
-                        self._handle_api_error(exc)
+                    # Non-retryable errors (400, 401, 403, 404, etc.) must fail immediately
+                    if not is_retryable_error(exc):
+                        self._handle_api_error(exc, model_name)
 
-                    # Temporary server error (5xx or connection error) -> backoff retry
+                    # Retryable error (network, 429, 5xx)
                     last_error = exc
-                    if attempt < max_attempts - 1:
-                        time.sleep(1.0 * (2**attempt))
+                    remaining_after_error = deadline - time.monotonic()
+                    if attempt < max_attempts - 1 and remaining_after_error > 2.0:
+                        backoff = min(1.0 * (2**attempt), 4.0)
+                        logger.warning(
+                            "Gemini retryable error on attempt %d: [%s], retrying in %.1fs...",
+                            attempt + 1,
+                            type(exc).__name__,
+                            backoff,
+                        )
+                        time.sleep(backoff)
                         continue
-                    self._handle_api_error(exc)
+                    self._handle_api_error(exc, model_name)
 
             if last_error:
-                self._handle_api_error(last_error)
+                self._handle_api_error(last_error, model_name)
             raise ContentInvalid("Không thể tạo nội dung sau nhiều lần thử.")
 
         finally:

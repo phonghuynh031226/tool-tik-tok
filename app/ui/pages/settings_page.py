@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.paths import project_root
+from app.services.gemini import select_preferred_model
 from app.ui.components import Card
 from app.ui.services import ServiceContainer
 from app.ui.state import JobState
@@ -315,13 +316,35 @@ class SettingsPage(QWidget):
         outer.addWidget(scroll)
 
     def _populate_gemini_models(self) -> None:
+        saved_model = (
+            self.services.settings.get("gemini_model")
+            if self.services.settings
+            else None
+        )
         try:
             models = self.services.generator.list_models()
         except Exception:
             models = ["gemini-2.0-flash", "gemini-1.5-pro"]
+
+        chosen, switched = select_preferred_model(models, saved_model)
+        self.combo_gemini_model.blockSignals(True)
         self.combo_gemini_model.clear()
         for m in models:
             self.combo_gemini_model.addItem(m, m)
+        idx = self.combo_gemini_model.findData(chosen)
+        if idx >= 0:
+            self.combo_gemini_model.setCurrentIndex(idx)
+        self.combo_gemini_model.blockSignals(False)
+
+        if switched and saved_model:
+            if self.services.settings:
+                self.services.settings.set("gemini_model", chosen)
+            QMessageBox.information(
+                self,
+                "Cập nhật mô hình AI",
+                f"Mô hình đã lưu '{saved_model}' không còn khả dụng trong danh sách Gemini. "
+                f"Hệ thống đã tự động chuyển sang mô hình ưu tiên '{chosen}'.",
+            )
 
     def _load_settings(self) -> None:
         # Load API key
@@ -428,7 +451,12 @@ class SettingsPage(QWidget):
         try:
             ok = self.services.generator.test_connection()
             if ok:
-                QMessageBox.information(self, "Kết nối thành công", "Kiểm tra kết nối Gemini AI thành công!")
+                self._populate_gemini_models()
+                QMessageBox.information(
+                    self,
+                    "Kết nối thành công",
+                    "Kiểm tra kết nối Gemini AI thành công! Danh sách mô hình đã được làm mới.",
+                )
             else:
                 QMessageBox.warning(self, "Không phản hồi", "Dịch vụ Gemini AI không phản hồi.")
         except Exception as exc:
