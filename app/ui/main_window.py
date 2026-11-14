@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Slot, QTimer
 from PySide6.QtWidgets import (
     QButtonGroup, QFrame, QHBoxLayout, QLabel, QMainWindow, QPushButton,
     QStackedWidget, QVBoxLayout, QWidget,
@@ -38,6 +38,12 @@ class MainWindow(QMainWindow):
         self._init_ui()
         self._apply_theme()
         self._connect_signals()
+        QTimer.singleShot(0, self._restore_youtube_session)
+
+    @Slot()
+    def _restore_youtube_session(self):
+        if not self.services.is_fake:
+            self.services.connection.restore_service(self.services.youtube)
 
     def _init_ui(self) -> None:
         central_widget = QWidget(self)

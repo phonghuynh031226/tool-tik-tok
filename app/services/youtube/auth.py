@@ -4,17 +4,25 @@ import json
 from pathlib import Path
 
 from google.auth.transport.requests import Request
+from google.auth.exceptions import RefreshError, TransportError
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from requests.exceptions import ConnectionError, Timeout
 
-from app.errors import AuthExpired
+from app.errors import AuthExpired, NetworkError
 from ._quiet import quiet_sdk
 from .validators import invalid
 
 SCOPES = ('https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.readonly')
 CLIENT_KEY = 'youtube.oauth.client'
 TOKEN_KEY = 'youtube.oauth.tokens'
+SESSION_EXPIRED_MESSAGE = 'Phiên đăng nhập đã hết hạn, hãy bấm Kết nối kênh để đăng nhập lại'
+
+
+def session_expired():
+    error = AuthExpired()
+    error.user_message = SESSION_EXPIRED_MESSAGE
+    return error
 OAUTH_SCOPE_EXPLANATION = (
     'youtube.upload: cho phép upload video bạn đã xem và xác nhận. '
     'youtube.readonly: đọc tên/mã kênh đích để bạn xác nhận và kiểm tra trạng thái xử lý video. '
@@ -115,6 +123,12 @@ def refresh_credentials(credentials, secret_store) -> None:
         with quiet_sdk():
             request = Request()
             credentials.refresh(lambda *args, **kwargs: request(*args, **(kwargs | {'timeout': 30})))
+    except (TransportError, ConnectionError, Timeout, OSError):
+        raise NetworkError() from None
+    except RefreshError as error:
+        if error.retryable:
+            raise NetworkError() from None
+        raise session_expired() from None
     except Exception:
-        raise AuthExpired() from None
+        raise session_expired() from None
     save_credentials(credentials, secret_store)

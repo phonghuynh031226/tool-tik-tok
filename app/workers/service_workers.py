@@ -294,3 +294,25 @@ class YouTubeConnectWorker(QRunnable):
                 from app.errors import AppError
                 message = exc.user_message if isinstance(exc, AppError) else 'Không thể kết nối kênh YouTube. Hãy kiểm tra OAuth Desktop client và mạng.'
                 self.signals.error.emit(message)
+
+
+class YouTubeRestoreWorker(QRunnable):
+    """Read/refresh stored credentials in a worker; no interactive fallback."""
+    def __init__(self, service):
+        super().__init__()
+        self.service = service
+        self.signals = WorkerSignals()
+
+    @Slot()
+    def run(self):
+        try:
+            channel = self.service.restore_session()
+            if channel is not None and not isinstance(channel, ChannelInfo):
+                raise ValueError('Invalid restored channel')
+            if channel is not None:
+                logger.info('youtube_session_restored — kênh đã xác thực')
+            self.signals.finished.emit(channel)
+        except Exception as error:
+            from app.errors import AppError
+            message = error.user_message if isinstance(error, AppError) else 'Không thể kiểm tra phiên YouTube đã lưu. Hãy thử Kết nối kênh.'
+            self.signals.error.emit(message)

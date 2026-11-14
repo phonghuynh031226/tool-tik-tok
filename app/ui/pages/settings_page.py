@@ -360,10 +360,8 @@ class SettingsPage(QWidget):
         if key:
             self.edit_api_key.setText(key)
 
-        # Load client secret path
-        secret_path = self.services.secrets.get("youtube_client_secret_path")
-        if secret_path:
-            self.edit_client_secret.setText(secret_path)
+        # Client contents are in SecretStore, not a reusable filesystem path.
+        self.edit_client_secret.setPlaceholderText('Chỉ chọn JSON lần đầu hoặc khi đổi project; client đã lưu sẽ được dùng lại.')
 
         # Load flags
         analyze_flag = bool(self.services.settings.get("analyze_video_file", False))

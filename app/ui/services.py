@@ -51,6 +51,7 @@ class YouTubeConnection(QObject):
         self._generation = 0
         self._worker = None
         self._upload_owner = None
+        self._restore_started = False
 
     def begin_upload(self, owner):
         if self.busy:
@@ -76,15 +77,21 @@ class YouTubeConnection(QObject):
         self.busy = False
         self.changed.emit()
 
-    def connect_service(self, service):
-        from app.workers.service_workers import YouTubeConnectWorker
+    def restore_service(self, service):
+        if self._restore_started or self.busy or self.channel is not None or not callable(getattr(service, 'restore_session', None)):
+            return
+        self._restore_started = True
+        self.connect_service(service, restore=True)
+
+    def connect_service(self, service, *, restore=False):
+        from app.workers.service_workers import YouTubeConnectWorker, YouTubeRestoreWorker
         if self.busy:
             return
         self.clear()
         self.busy = True
         self.changed.emit()
         generation = self._generation
-        worker = YouTubeConnectWorker(service)
+        worker = YouTubeRestoreWorker(service) if restore else YouTubeConnectWorker(service)
         self._worker = worker
         self._attempt = _ConnectionAttempt(self, generation)
         worker.signals.finished.connect(self._attempt.finished)

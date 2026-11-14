@@ -167,13 +167,40 @@ class YouTubeService:
 
     def connect(self) -> ChannelInfo:
         self._confirmation = None
-        self._credentials = auth.load_credentials(self._secrets)
+        try:
+            self._credentials = auth.load_credentials(self._secrets)
+        except AuthExpired:
+            self._secrets.delete(auth.TOKEN_KEY)
+            self._credentials = None
         if self._credentials is None:
             self._credentials = auth.authorize(self._secrets)
+        self._build_api()
+        return self.get_channel()
+
+    def _build_api(self):
         self._transport = _Transport(self)
         with quiet_sdk():
             self._api = build('youtube', 'v3', http=self._transport, cache_discovery=False, static_discovery=True)
-        return self.get_channel()
+
+    def restore_session(self) -> ChannelInfo | None:
+        """Silent startup path: NEVER authorize or open a browser.
+
+        Invalid credentials are removed, but the imported Desktop client stays
+        in SecretStore. Network failures retain credentials for a later retry.
+        """
+        self._confirmation = None
+        try:
+            self._credentials = auth.load_credentials(self._secrets)
+            self._api = None
+            if self._credentials is None:
+                return None
+            self._build_api()
+            return self.get_channel()  # _Policy performs at most one refresh.
+        except AuthExpired:
+            self._credentials = None
+            self._api = None
+            self._secrets.delete(auth.TOKEN_KEY)
+            raise auth.session_expired() from None
 
     def disconnect(self) -> None:
         if self._transport:
