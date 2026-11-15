@@ -21,6 +21,6 @@ không có dấu hiệu xử lý thất bại. uploaded_at là lúc API xác nh�
 Chỉ quá giờ hẹn chưa đủ để kết luận thành công: giữ SCHEDULED, lưu
 schedule_needs_review=true cùng error_message tiếng Việt; không tạo enum mới.
 
-UI hiện tại chưa đọc UploadResult.status; lượt này không sửa UI/workers. Bên UI
-cần dùng status=SCHEDULED và cờ cần kiểm tra khi tích hợp màn hình hẹn giờ v2,
-không dùng thông báo “đã công khai” chung cho mọi kết quả upload.
+UI v2 đã đọc UploadResult.status=SCHEDULED và cờ cần kiểm tra khi tích hợp.
+Nhãn “Đã công khai” yêu cầu schedule_public_confirmed=true, do sync_scheduled
+lưu sau xác nhận API; không dùng nhãn này chung cho mọi kết quả upload.

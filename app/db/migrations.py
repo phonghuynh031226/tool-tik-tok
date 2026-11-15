@@ -6,6 +6,7 @@ import sqlite3
 import re
 
 from app.security.redaction import redact_text
+from .backup import backup_before_migration
 
 CURRENT_VERSION = 4
 
@@ -105,13 +106,19 @@ def migrate(db: sqlite3.Connection) -> None:
     db.execute('PRAGMA foreign_keys = OFF')
     db.execute('BEGIN IMMEDIATE')
     try:
-        db.execute('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)')
-        versions = db.execute('SELECT version FROM schema_version').fetchall()
+        has_version = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_version'").fetchone()
+        versions = db.execute('SELECT version FROM schema_version').fetchall() if has_version else []
         if len(versions) > 1:
             raise MigrationError('Bảng phiên bản cơ sở dữ liệu không hợp lệ.')
         current = versions[0][0] if versions else 0
         if not isinstance(current, int) or current < 0 or current > CURRENT_VERSION:
             raise MigrationError('Cơ sở dữ liệu dùng phiên bản không được hỗ trợ; dữ liệu được giữ nguyên.')
+        if current < CURRENT_VERSION and db.execute("SELECT 1 FROM sqlite_master WHERE type='table' LIMIT 1").fetchone():
+            try:
+                backup_before_migration(db)
+            except Exception:
+                raise MigrationError('Không thể sao lưu cơ sở dữ liệu; hủy nâng cấp và giữ nguyên dữ liệu.') from None
+        db.execute('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)')
         if not versions:
             db.execute('INSERT INTO schema_version(version) VALUES (?)', (0,))
         for number, upgrade in ((1, _version_one), (2, _version_two), (3, _version_three), (4, _version_four)):

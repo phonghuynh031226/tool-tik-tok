@@ -41,6 +41,7 @@ class HistoryPage(QWidget):
         self.thread_pool = QThreadPool.globalInstance()
         self._current_records: list[dict] = []
         self._scheduled_records: list[dict] = []
+        self._sync_worker: Optional[SyncScheduledWorker] = None
 
         self._init_ui()
         self.refresh_history()
@@ -186,7 +187,7 @@ class HistoryPage(QWidget):
         h_row.addWidget(self.btn_sync_scheduled)
 
         self.btn_refresh_scheduled = AppButton("Làm mới", variant="ghost", icon_name="refresh", parent=container)
-        self.btn_refresh_scheduled.clicked.connect(self.refresh_scheduled)
+        self.btn_refresh_scheduled.clicked.connect(self._on_sync_scheduled_clicked)
         h_row.addWidget(self.btn_refresh_scheduled)
         layout.addLayout(h_row)
 
@@ -248,7 +249,7 @@ class HistoryPage(QWidget):
             "DOWNLOADED": "Đã tải về",
             "CONTENT_READY": "Nội dung sẵn sàng",
             "UPLOADING": "Đang tải lên...",
-            "UPLOADED": "Đã xuất bản",
+            "UPLOADED": "Đã tải lên",
             "SCHEDULED": "Đã hẹn giờ",
             "DRY_RUN": "Chạy thử",
             "FAILED": "Thất bại",
@@ -266,11 +267,11 @@ class HistoryPage(QWidget):
             else:
                 vid_id = "—"
 
-            title = str(rec.get("title") or "Không tiêu đề")
-            raw_status = rec.get("status")
+            title = str(rec.get("youtube_title") or rec.get("title") or "Không tiêu đề")
+            raw_status = rec.get("processing_status") or rec.get("status")
             status_val = raw_status.value if hasattr(raw_status, "value") else str(raw_status or "NEW")
             status_display = status_text_map.get(status_val, status_val)
-            privacy = str(rec.get("privacy") or "private")
+            privacy = str(rec.get("privacy_status") or rec.get("privacy") or "private")
             url = str(rec.get("url") or rec.get("youtube_url") or "")
             path_str = str(rec.get("path") or rec.get("local_video_path") or "")
 
@@ -380,6 +381,11 @@ class HistoryPage(QWidget):
     def refresh_scheduled(self) -> None:
         try:
             records = self.services.history.list_scheduled()
+            # API-confirmed publications remain visible in the schedule tracker.
+            published = self.services.history.list(status=JobStatus.UPLOADED)
+            records = list(records) + [r for r in published if r.get("scheduled_at")
+                and r.get("schedule_public_confirmed") is True
+                and r.get("id") not in {row.get("id") for row in records}]
         except Exception:
             records = []
 
@@ -391,17 +397,19 @@ class HistoryPage(QWidget):
         now_utc = datetime.now(timezone.utc)
 
         for row, rec in enumerate(records):
-            vid_id = str(rec.get("video_id") or rec.get("tiktok_video_id") or "—")
-            title = str(rec.get("title") or "Không tiêu đề")
+            vid_id = str(rec.get("youtube_video_id") or rec.get("video_id") or rec.get("tiktok_video_id") or "—")
+            title = str(rec.get("youtube_title") or rec.get("title") or "Không tiêu đề")
             channel = str(rec.get("channel_title") or rec.get("channel_id") or "Kênh mặc định")
 
             # Publish at
-            pub_at = rec.get("publish_at") or rec.get("scheduled_at")
+            pub_at = rec.get("scheduled_at") or rec.get("publish_at")
             if isinstance(pub_at, str):
                 try:
                     pub_at = datetime.fromisoformat(pub_at)
                 except Exception:
                     pub_at = None
+            if isinstance(pub_at, datetime) and (pub_at.tzinfo is None or pub_at.utcoffset() is None):
+                pub_at = None
             if isinstance(pub_at, datetime):
                 # Convert to machine local time
                 local_dt = pub_at.astimezone()
@@ -423,14 +431,15 @@ class HistoryPage(QWidget):
                 is_due = False
 
             # Status
-            raw_st = rec.get("status")
+            raw_st = rec.get("processing_status") or rec.get("status")
             st_val = raw_st.value if hasattr(raw_st, "value") else str(raw_st or "")
-            if st_val == "UPLOADED":
+            if (rec.get("schedule_public_confirmed") is True and st_val == "UPLOADED"
+                    and rec.get("privacy_status") == "public"):
                 status_label = "Đã công khai"
                 badge_type = "success"
-            elif is_due:
-                status_label = "Đến giờ công khai"
-                badge_type = "info"
+            elif rec.get("schedule_needs_review") or is_due or pub_at is None or st_val == "UPLOADED":
+                status_label = "Cần kiểm tra"
+                badge_type = "warning"
             else:
                 status_label = "Chờ công khai"
                 badge_type = "warning"
@@ -451,18 +460,24 @@ class HistoryPage(QWidget):
 
     @Slot()
     def _on_sync_scheduled_clicked(self) -> None:
+        if self._sync_worker is not None:
+            return
         self.prog_sync.setVisible(True)
         self.btn_sync_scheduled.setEnabled(False)
+        self.btn_refresh_scheduled.setEnabled(False)
 
         worker = SyncScheduledWorker(self.services.youtube, self.services.history)
+        self._sync_worker = worker
         worker.signals.finished.connect(self._on_sync_finished)
         worker.signals.error.connect(self._on_sync_error)
         self.thread_pool.start(worker)
 
     @Slot(object)
     def _on_sync_finished(self, published: list[UploadResult]) -> None:
+        self._sync_worker = None
         self.prog_sync.setVisible(False)
         self.btn_sync_scheduled.setEnabled(True)
+        self.btn_refresh_scheduled.setEnabled(True)
         self.refresh_scheduled()
         self.refresh_history()
 
@@ -474,8 +489,10 @@ class HistoryPage(QWidget):
 
     @Slot(str)
     def _on_sync_error(self, err: str) -> None:
+        self._sync_worker = None
         self.prog_sync.setVisible(False)
         self.btn_sync_scheduled.setEnabled(True)
+        self.btn_refresh_scheduled.setEnabled(True)
         self._notify("error", "Lỗi đồng bộ lịch đăng", err)
 
 

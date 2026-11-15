@@ -356,6 +356,7 @@ class YouTubeChannelsPage(QWidget):
     def _on_accounts_loaded(self, accounts: list[ChannelAccount]) -> None:
         self.progress_bar.setVisible(False)
         self._accounts = accounts
+        self.services.connection.set_accounts(accounts)
 
         # Clear existing card widgets
         for c in self._card_widgets:
@@ -436,12 +437,14 @@ class YouTubeChannelsPage(QWidget):
 
         # Worker for Channel Videos
         w_vids = FetchChannelVideosWorker(self.services.youtube, ch_id, limit=50, force_refresh=force_refresh)
-        w_vids.signals.finished.connect(self._on_videos_loaded)
+        w_vids.signals.channel_result.connect(self._on_channel_videos_loaded)
         w_vids.signals.error.connect(self._on_op_error)
         self.thread_pool.start(w_vids)
 
     @Slot(object)
     def _on_stats_loaded(self, stats: ChannelStats) -> None:
+        if self._selected_account is not None and stats.channel_id != self._selected_account.id:
+            return
         self.progress_bar.setVisible(False)
         if stats.subscribers_hidden:
             self.stat_subscribers.set_value("Ẩn")
@@ -457,9 +460,15 @@ class YouTubeChannelsPage(QWidget):
     def _on_videos_loaded(self, videos: list[VideoStats]) -> None:
         self.progress_bar.setVisible(False)
         self._all_videos = videos
-        now_str = datetime.now().strftime("%H:%M:%S %d/%m/%Y")
-        self.lbl_updated_at.setText(f"Cập nhật lúc: {now_str}")
+        fetched = min((v.fetched_at for v in videos if v.fetched_at is not None), default=None)
+        stamp = fetched.astimezone().strftime("%H:%M:%S %d/%m/%Y") if fetched else 'chưa có thời điểm cập nhật'
+        self.lbl_updated_at.setText(f"Dữ liệu lưu lúc: {stamp}")
         self._render_videos(videos)
+
+    @Slot(str, object)
+    def _on_channel_videos_loaded(self, channel_id, videos):
+        if self._selected_account is not None and self._selected_account.id == channel_id:
+            self._on_videos_loaded(videos)
 
     def _render_videos(self, videos: list[VideoStats]) -> None:
         self.tbl_videos.setSortingEnabled(False)
@@ -518,7 +527,7 @@ class YouTubeChannelsPage(QWidget):
     def _on_set_default_for_account(self, account: ChannelAccount) -> None:
         self.progress_bar.setVisible(True)
         worker = SetDefaultAccountWorker(self.services.youtube, account.id)
-        worker.signals.finished.connect(lambda ch_id: self._load_accounts())
+        worker.signals.finished.connect(self._default_changed)
         worker.signals.error.connect(self._on_op_error)
         self.thread_pool.start(worker)
 
@@ -526,6 +535,11 @@ class YouTubeChannelsPage(QWidget):
     def _on_reconnect(self) -> None:
         if self._selected_account:
             self._on_reconnect_for_account(self._selected_account)
+
+    @Slot(object)
+    def _default_changed(self, channel_id):
+        self.services.connection.select_channel(channel_id)
+        self._load_accounts()
 
     def _on_reconnect_for_account(self, account: ChannelAccount) -> None:
         self.progress_bar.setVisible(True)

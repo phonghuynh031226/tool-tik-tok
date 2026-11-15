@@ -25,7 +25,7 @@ def create_window() -> QMainWindow:
 
 def main() -> int:
     if configure_logging is not None:
-        configure_logging()
+        configure_logging(include_app=True)
     application = QApplication(sys.argv)
     window = create_window()
     window.show()

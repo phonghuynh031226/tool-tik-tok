@@ -21,6 +21,11 @@ from app.workers.base import WorkerSignals
 logger = logging.getLogger('TikTokYouTubeStudio.events')
 
 
+def _safe_error(error, fallback):
+    from app.errors import AppError
+    return error.user_message if isinstance(error, AppError) else fallback
+
+
 @dataclass(frozen=True)
 class DryRunResult:
     title: str
@@ -63,7 +68,7 @@ class FetchMetaWorker(QRunnable):
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
             else:
-                self.signals.error.emit(str(exc) or "Không thể tải thông tin video")
+                self.signals.error.emit(_safe_error(exc, "Không thể tải thông tin video"))
 
 
 class DownloadVideoWorker(QRunnable):
@@ -104,7 +109,7 @@ class DownloadVideoWorker(QRunnable):
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
             else:
-                self.signals.error.emit(str(exc) or "Lỗi tải video TikTok")
+                self.signals.error.emit(_safe_error(exc, "Lỗi tải video TikTok"))
 
 
 class GenerateContentWorker(QRunnable):
@@ -151,7 +156,7 @@ class GenerateContentWorker(QRunnable):
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
             else:
-                self.signals.error.emit(str(exc) or "Lỗi khi sinh nội dung AI")
+                self.signals.error.emit(_safe_error(exc, "Lỗi khi sinh nội dung AI"))
 
 
 class UploadYouTubeWorker(QRunnable):
@@ -263,7 +268,7 @@ class YtDlpUpdateWorker(QRunnable):
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
             else:
-                self.signals.error.emit(str(exc) or "Lỗi khi kiểm tra cập nhật yt-dlp")
+                self.signals.error.emit(_safe_error(exc, "Lỗi khi kiểm tra cập nhật yt-dlp"))
 
 
 class YouTubeConnectWorker(QRunnable):
@@ -311,6 +316,9 @@ class YouTubeRestoreWorker(QRunnable):
     @Slot()
     def run(self):
         try:
+            accounts = self.service.list_accounts()
+            if isinstance(accounts, list):
+                self.signals.accounts_loaded.emit(accounts)
             channel = self.service.restore_session()
             if channel is not None and not isinstance(channel, ChannelInfo):
                 raise ValueError('Invalid restored channel')
@@ -351,7 +359,7 @@ class FetchAccountsWorker(QRunnable):
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
             else:
-                self.signals.error.emit(str(exc) or "Không thể tải danh sách tài khoản YouTube.")
+                self.signals.error.emit(_safe_error(exc, "Không thể tải danh sách tài khoản YouTube."))
 
 
 class AddAccountWorker(QRunnable):
@@ -382,7 +390,7 @@ class AddAccountWorker(QRunnable):
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
             else:
-                self.signals.error.emit(str(exc) or "Không thể thêm tài khoản YouTube.")
+                self.signals.error.emit(_safe_error(exc, "Không thể thêm tài khoản YouTube."))
 
 
 class RemoveAccountWorker(QRunnable):
@@ -414,7 +422,7 @@ class RemoveAccountWorker(QRunnable):
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
             else:
-                self.signals.error.emit(str(exc) or "Không thể xóa tài khoản YouTube.")
+                self.signals.error.emit(_safe_error(exc, "Không thể xóa tài khoản YouTube."))
 
 
 class SetDefaultAccountWorker(QRunnable):
@@ -446,7 +454,7 @@ class SetDefaultAccountWorker(QRunnable):
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
             else:
-                self.signals.error.emit(str(exc) or "Không thể đặt kênh mặc định.")
+                self.signals.error.emit(_safe_error(exc, "Không thể đặt kênh mặc định."))
 
 
 class FetchChannelStatsWorker(QRunnable):
@@ -479,7 +487,7 @@ class FetchChannelStatsWorker(QRunnable):
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
             else:
-                self.signals.error.emit(str(exc) or "Không thể tải số liệu thống kê kênh.")
+                self.signals.error.emit(_safe_error(exc, "Không thể tải số liệu thống kê kênh."))
 
 
 class FetchChannelVideosWorker(QRunnable):
@@ -519,11 +527,12 @@ class FetchChannelVideosWorker(QRunnable):
                 self.signals.cancelled.emit()
             else:
                 self.signals.finished.emit(videos)
+                self.signals.channel_result.emit(self.channel_id, videos)
         except Exception as exc:
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
             else:
-                self.signals.error.emit(str(exc) or "Không thể tải danh sách video kênh.")
+                self.signals.error.emit(_safe_error(exc, "Không thể tải danh sách video kênh."))
 
 
 class SyncScheduledWorker(QRunnable):
@@ -551,14 +560,6 @@ class SyncScheduledWorker(QRunnable):
             return
         try:
             published = self.service.sync_scheduled()
-            if self.history is not None:
-                for res in published:
-                    rec = self.history.find_by_video_id(res.video_id)
-                    if rec is not None:
-                        self.history.update(rec["id"], {
-                            "status": JobStatus.UPLOADED,
-                            "youtube_url": res.url,
-                        })
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
             else:
@@ -567,4 +568,4 @@ class SyncScheduledWorker(QRunnable):
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
             else:
-                self.signals.error.emit(str(exc) or "Không thể đồng bộ lịch đăng.")
+                self.signals.error.emit(_safe_error(exc, "Không thể đồng bộ lịch đăng."))

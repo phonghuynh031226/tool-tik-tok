@@ -47,7 +47,8 @@ class RedactingFormatter(logging.Formatter):
 
 
 def configure_logging(path: Path | None = None, *, max_bytes: int = 1024 * 1024,
-                      backup_count: int = 3, level: int = logging.INFO) -> logging.Logger:
+                      backup_count: int = 3, level: int = logging.INFO,
+                      include_app: bool = False) -> logging.Logger:
     if max_bytes <= 0 or backup_count < 1:
         raise ValueError('Cấu hình xoay log không hợp lệ.')
     path = safe_path(path if path is not None else Path('logs/studio.log'))
@@ -58,12 +59,20 @@ def configure_logging(path: Path | None = None, *, max_bytes: int = 1024 * 1024,
     handler = RotatingFileHandler(path, maxBytes=max_bytes, backupCount=backup_count,
                                   encoding='utf-8', delay=True)
     handler.addFilter(RedactingFilter())
+    handler._studio_log_handler = True
     handler.setFormatter(RedactingFormatter('%(asctime)s %(levelname)s %(name)s %(message)s'))
     logger = logging.getLogger('TikTokYouTubeStudio')
     for existing in list(logger.handlers):
         logger.removeHandler(existing)
         existing.close()
     logger.addHandler(handler)
+    app_logger = logging.getLogger('app')
+    for existing in list(app_logger.handlers):
+        if getattr(existing, '_studio_log_handler', False):
+            app_logger.removeHandler(existing)
+    if include_app:
+        app_logger.addHandler(handler)
+        app_logger.setLevel(level)
     logger.setLevel(level)
     logger.propagate = False
     logger.info('Ứng dụng khởi động; logging đã bật.')

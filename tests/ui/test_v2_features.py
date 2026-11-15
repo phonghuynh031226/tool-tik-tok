@@ -243,6 +243,8 @@ def test_overview_channel_picker_selection_and_expired(qtbot, test_container):
     qtbot.addWidget(window)
     page = window.page_dashboard
 
+    # Account verification runs in a worker; wait for the UI snapshot.
+    qtbot.waitUntil(lambda: page.combo_channel.count() == 2, timeout=5000)
     # Check that combo has both accounts
     assert page.combo_channel.count() == 2
     assert "Kênh Hợp Lệ (Mặc định)" in page.combo_channel.itemText(0)

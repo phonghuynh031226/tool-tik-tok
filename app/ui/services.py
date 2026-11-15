@@ -11,7 +11,7 @@ from typing import Optional
 
 from app.contracts import (
     ContentGenerator, HistoryRepository, SecretStore, SettingsStore,
-    TikTokService, YouTubeService,
+    TikTokService, YouTubeService, ChannelAccount, ChannelInfo,
 )
 from app.services.tiktok.service import TikTokService as RealTikTokService
 from app.services.youtube.service import YouTubeService as RealYouTubeService
@@ -43,6 +43,11 @@ class _ConnectionAttempt(QObject):
             self.connection.set_channel(None)
             self.connection.error.emit(message)
 
+    @Slot(object)
+    def accounts(self, accounts):
+        if self.generation == self.connection._generation:
+            self.connection.set_accounts(accounts)
+
 
 class YouTubeConnection(QObject):
     changed = Signal()
@@ -51,6 +56,9 @@ class YouTubeConnection(QObject):
     def __init__(self):
         super().__init__()
         self.channel = None
+        self.accounts = []
+        self.accounts_loaded = False
+        self.selected_channel_id = None
         self.busy = False
         self._generation = 0
         self._worker = None
@@ -73,11 +81,38 @@ class YouTubeConnection(QObject):
 
     def set_channel(self, channel):
         self.channel = channel
+        if channel is not None:
+            self.selected_channel_id = channel.id
+        if channel is not None and not any(a.id == channel.id for a in self.accounts):
+            self.accounts.append(ChannelAccount(channel.id, channel.title, status='connected'))
+        self.changed.emit()
+
+    def set_accounts(self, accounts):
+        self.accounts = [a for a in accounts if isinstance(a, ChannelAccount)]
+        self.accounts_loaded = True
+        selected = next((a for a in self.accounts if a.id == self.selected_channel_id), None)
+        if selected is None:
+            selected = next((a for a in self.accounts if a.is_default), None)
+        self.channel = (ChannelInfo(selected.id, selected.title)
+                        if selected is not None and selected.status == 'connected' else None)
+        if self.busy and self._upload_owner is None:
+            self.channel = None  # Restoration publishes verification atomically on finished.
+        self.selected_channel_id = selected.id if selected else None
+        self.changed.emit()
+
+    def select_channel(self, channel_id):
+        self.selected_channel_id = channel_id
+        account = next((a for a in self.accounts if a.id == channel_id), None)
+        self.channel = (ChannelInfo(account.id, account.title)
+                        if account is not None and account.status == 'connected' else None)
         self.changed.emit()
 
     def clear(self):
         self._generation += 1
         self.channel = None
+        self.accounts = []
+        self.accounts_loaded = False
+        self.selected_channel_id = None
         self.busy = False
         self.changed.emit()
 
@@ -100,6 +135,7 @@ class YouTubeConnection(QObject):
         self._attempt = _ConnectionAttempt(self, generation)
         worker.signals.finished.connect(self._attempt.finished)
         worker.signals.error.connect(self._attempt.failed)
+        worker.signals.accounts_loaded.connect(self._attempt.accounts)
         QThreadPool.globalInstance().start(worker)
 
 
@@ -126,7 +162,9 @@ class ServiceContainer:
 
     def upload_enabled(self, dry_run=False):
         channel = self.connection.channel
+        account = next((a for a in self.connection.accounts if channel is not None and a.id == channel.id), None)
         return not self.connection.busy and (dry_run or (not self.is_fake and channel is not None
+            and (account is not None and account.status == 'connected')
             and re.fullmatch(r'UC[A-Za-z0-9_-]{22}', channel.id) is not None))
 
     def valid_upload_result(self, result):
@@ -157,11 +195,12 @@ class ServiceContainer:
             secret_store=secrets,
             settings_store=settings,
         )
+        history = SQLiteHistoryRepository(secret_store=secrets)
         return cls(
             tiktok=RealTikTokService(),
             generator=generator,
-            youtube=RealYouTubeService(secret_store=secrets),
-            history=SQLiteHistoryRepository(secret_store=secrets),
+            youtube=RealYouTubeService(secret_store=secrets, settings_store=settings, history_repository=history),
+            history=history,
             secrets=secrets,
             settings=settings,
         )

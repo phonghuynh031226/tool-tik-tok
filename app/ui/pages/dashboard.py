@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.contracts import DownloadResult, GeneratedContent, JobStatus, VideoMeta
-from app.services.gemini import select_preferred_model
+from app.ui.model_loading import populate_models
 from app.ui import tokens
 from app.ui.components import (
     AppButton, Card, ConfirmDialog, ToastManager, UploadConfirmDialog, VideoPlayerWidget,
@@ -325,7 +325,7 @@ class DashboardPage(QWidget):
         ch_layout.addLayout(ch_text_box, stretch=1)
 
         self.btn_refresh_channel = AppButton("Làm mới kênh", variant="ghost", icon_name="refresh", parent=self.channel_box)
-        self.btn_refresh_channel.clicked.connect(self._refresh_channel_info)
+        self.btn_refresh_channel.clicked.connect(self._refresh_accounts_async)
         ch_layout.addWidget(self.btn_refresh_channel)
         s4_layout.addWidget(self.channel_box)
 
@@ -596,28 +596,7 @@ class DashboardPage(QWidget):
             self.steps_grid.setColumnStretch(1, 0)
 
     def _populate_models(self) -> None:
-        saved_model = self.services.settings.get("gemini_model") if self.services.settings else None
-        try:
-            models = self.services.generator.list_models()
-        except Exception:
-            models = ["gemini-2.0-flash", "gemini-1.5-pro"]
-
-        chosen, switched = select_preferred_model(models, saved_model)
-        self.combo_model.clear()
-        for m in models:
-            self.combo_model.addItem(m, m)
-        idx = self.combo_model.findData(chosen)
-        if idx >= 0:
-            self.combo_model.setCurrentIndex(idx)
-        if switched and saved_model:
-            if self.services.settings:
-                self.services.settings.set("gemini_model", chosen)
-            QMessageBox.information(
-                self,
-                "Cập nhật mô hình AI",
-                f"Mô hình đã lưu '{saved_model}' không còn khả dụng trong danh sách Gemini. "
-                f"Hệ thống đã tự động chuyển sang mô hình ưu tiên '{chosen}'.",
-            )
+        populate_models(self.combo_model, self.services)
 
     def _connect_state(self) -> None:
         self.state.job_changed.connect(self._sync_from_state)
@@ -1021,96 +1000,65 @@ class DashboardPage(QWidget):
     # Handlers: Step 4 YouTube
     # ---------------------------------------------------------
     @Slot()
+    def _refresh_accounts_async(self):
+        worker = FetchAccountsWorker(self.services.youtube)
+        worker.signals.finished.connect(self.services.connection.set_accounts)
+        worker.signals.error.connect(self.services.connection.error)
+        self.thread_pool.start(worker)
+
+    @Slot()
     def _refresh_channel_info(self) -> None:
-        channel = self.services.connection.channel
-        checking = self.services.connection.busy and self.services.connection._upload_owner is None
-        authenticated = channel is not None and not self.services.is_fake
-        state = 'checking' if checking else ('connected' if authenticated else 'disconnected')
+        connection = self.services.connection
+        accounts = list(connection.accounts)
+        selected = next((a for a in accounts if a.id == connection.selected_channel_id), None)
+        channel = connection.channel
+        checking = connection.busy and connection._upload_owner is None
+        verified = channel is not None and not self.services.is_fake
+        state = 'checking' if checking else ('connected' if verified else 'disconnected')
         self.lbl_channel_indicator.setProperty('connectionState', state)
         color = {'checking': '#facc15', 'connected': '#22c55e', 'disconnected': '#ef4444'}[state]
         self.lbl_channel_indicator.setStyleSheet(f'font-size:20px;color:{color};')
-
-        # Populate accounts combo
-        accounts = []
-        if hasattr(self.services.youtube, "list_accounts"):
-            try:
-                raw_accounts = self.services.youtube.list_accounts()
-                if isinstance(raw_accounts, (list, tuple)):
-                    accounts = list(raw_accounts)
-            except Exception:
-                accounts = []
-
-        if channel:
-            if not any(getattr(a, "id", None) == channel.id for a in accounts):
-                from app.contracts import ChannelAccount
-                accounts.insert(0, ChannelAccount(channel.id, channel.title, is_default=True, status="connected"))
-
         self.combo_channel.blockSignals(True)
         self.combo_channel.clear()
-
-        if channel:
-            self.lbl_channel_title.setText(f"Kênh YouTube: {channel.title}")
-            self.lbl_channel_id.setText(f"ID kênh: {channel.id}")
-            self.state.channel_id = channel.id
-            self.btn_reconnect_channel.setVisible(False)
-
-            default_acc = next((a for a in accounts if getattr(a, "id", None) == channel.id), accounts[0] if accounts else None)
-            for acc in accounts:
-                is_expired = getattr(acc, "status", "") == "expired"
-                suffix = " (Hết hạn)" if is_expired else (" (Mặc định)" if getattr(acc, "is_default", False) else "")
-                self.combo_channel.addItem(f"{acc.title}{suffix}", acc)
-
-            if default_acc:
-                def_idx = 0
-                for i in range(self.combo_channel.count()):
-                    d = self.combo_channel.itemData(i)
-                    if d and getattr(d, "id", None) == default_acc.id:
-                        def_idx = i
-                        break
-                self.combo_channel.setCurrentIndex(def_idx)
-        else:
-            self.lbl_channel_title.setText("Kênh YouTube: Chưa kết nối")
-            self.lbl_channel_id.setText("ID kênh: -")
-            self.state.channel_id = None
-            self.btn_reconnect_channel.setVisible(False)
-
-            if accounts:
-                for acc in accounts:
-                    is_expired = getattr(acc, "status", "") == "expired"
-                    suffix = " (Hết hạn)" if is_expired else (" (Mặc định)" if getattr(acc, "is_default", False) else "")
-                    self.combo_channel.addItem(f"{acc.title}{suffix}", acc)
-                self.combo_channel.setCurrentIndex(0)
-            else:
-                self.combo_channel.addItem("Chưa có tài khoản kết nối", None)
-                self.combo_channel.setCurrentIndex(0)
-
+        for account in accounts:
+            suffix = ' (Hết hạn)' if account.status == 'expired' else (' (Mặc định)' if account.is_default else '')
+            self.combo_channel.addItem(account.title + suffix, account)
+        if not accounts:
+            self.combo_channel.addItem('Chưa có tài khoản kết nối', None)
+        if selected:
+            self.combo_channel.setCurrentIndex(next(i for i, a in enumerate(accounts) if a.id == selected.id))
         self.combo_channel.blockSignals(False)
+        self.lbl_channel_title.setText(f'Kênh YouTube: {selected.title}' if selected else 'Kênh YouTube: Chưa kết nối')
+        self.lbl_channel_id.setText(f'ID kênh: {selected.id}' if selected else 'ID kênh: -')
+        if self.state.channel_id != (selected.id if selected else None):
+            self.state.channel_id = selected.id if selected else None
+        self.btn_reconnect_channel.setVisible(selected is not None and selected.status != 'connected')
         self._update_upload_button_state()
         self._update_stepper_state()
 
     @Slot(int)
     def _on_channel_combo_changed(self, index: int) -> None:
         acc = self.combo_channel.itemData(index)
-        if acc:
-            self.lbl_channel_title.setText(f"Kênh YouTube: {acc.title}")
-            self.lbl_channel_id.setText(f"ID kênh: {acc.id}")
-            self.state.channel_id = acc.id
-            is_expired = getattr(acc, "status", "") == "expired"
-            self.btn_reconnect_channel.setVisible(is_expired)
-        else:
-            self.state.channel_id = None
-            self.btn_reconnect_channel.setVisible(False)
+        self.state.channel_id = acc.id if acc else None
+        self.services.connection.select_channel(acc.id if acc else None)
+        self.btn_reconnect_channel.setVisible(acc is not None and acc.status != 'connected')
         self._update_upload_button_state()
 
     @Slot()
     def _on_reconnect_channel_clicked(self) -> None:
         if hasattr(self.services.youtube, "add_account"):
             worker = AddAccountWorker(self.services.youtube)
-            worker.signals.finished.connect(lambda acc: (self._refresh_channel_info(), ToastManager.instance().success("Kết nối lại thành công!", f"Đã kết nối lại kênh {acc.title}.")))
+            worker.signals.finished.connect(self._on_reconnected_account)
             worker.signals.error.connect(lambda err: ToastManager.instance().error("Kết nối thất bại", err))
             self.thread_pool.start(worker)
         else:
             ToastManager.instance().info("Kết nối lại kênh", "Vui lòng vào trang Kênh YouTube hoặc Cài đặt để kết nối lại tài khoản.")
+
+    @Slot(object)
+    def _on_reconnected_account(self, account):
+        worker = FetchAccountsWorker(self.services.youtube)
+        worker.signals.finished.connect(self.services.connection.set_accounts)
+        self.thread_pool.start(worker)
 
     @Slot(bool)
     def _on_timing_changed(self, _checked: bool) -> None:
@@ -1261,7 +1209,7 @@ class DashboardPage(QWidget):
                 channel_title = channel.title
                 channel_id = channel.id
             else:
-                channel_title = "dry-run-channel"
+                channel_title = "Chưa chọn kênh"
                 channel_id = "Chạy thử — không đăng video"
         except Exception as exc:
             QMessageBox.critical(self, "Lỗi kiểm tra", str(exc))
@@ -1316,7 +1264,7 @@ class DashboardPage(QWidget):
             ToastManager.instance().info("Chạy thử hoàn tất!", "Đã chạy thử quy trình thành công (không upload thật).")
             return
 
-        is_scheduled = getattr(result, "status", None) == JobStatus.SCHEDULED or self.state.publish_at is not None
+        is_scheduled = getattr(result, "status", None) == JobStatus.SCHEDULED
 
         self.state.set_upload_result(result)
         self._on_upload_result(result)
@@ -1325,7 +1273,7 @@ class DashboardPage(QWidget):
             local_time_str = self.dt_publish.dateTime().toString("dd/MM/yyyy HH:mm")
             ToastManager.instance().success(
                 "Đã lên lịch thành công!",
-                f"Đã lên lịch video thành công! YouTube sẽ tự động công khai vào {local_time_str}."
+                f"Đã lên lịch video thành công! Lịch công khai dự kiến là {local_time_str}."
             )
         else:
             ToastManager.instance().success("Tải lên thành công!", "Đăng video lên YouTube thành công!")
@@ -1338,6 +1286,17 @@ class DashboardPage(QWidget):
             ch_id = getattr(result, "channel_id", "") or (sel_acc.id if sel_acc else "") or (self.services.connection.channel.id if self.services.connection.channel else "")
             job_status = JobStatus.SCHEDULED if is_scheduled else JobStatus.UPLOADED
 
+            existing = next((r for r in self.services.history.list_scheduled()
+                             if r.get("youtube_video_id") == result.video_id
+                             and r.get("channel_id") == result.channel_id), None) if is_scheduled else None
+            if existing is not None:
+                details = {"original_title": meta.title if meta else self.state.title}
+                if meta is not None:
+                    details.update(tiktok_video_id=meta.video_id, tiktok_url=meta.url)
+                if download is not None:
+                    details.update(sha256=download.sha256, file_size=download.size)
+                self.services.history.update(existing["id"], details)
+                return
             self.services.history.add({
                 "video_id": meta.video_id if meta else getattr(result, "video_id", ""),
                 "url": meta.url if meta else "",
@@ -1353,11 +1312,11 @@ class DashboardPage(QWidget):
                 "status": job_status,
                 "privacy_status": "private" if is_scheduled else self.state.privacy,
                 "rights_confirmed": self.state.rights_confirmed,
-                "publish_at": self.state.publish_at,
+                "publish_at": self.state.publish_at.isoformat() if self.state.publish_at else None,
                 "scheduled_at": self.state.publish_at.isoformat() if self.state.publish_at else None,
             })
         except Exception:
-            QMessageBox.warning(self, "Lịch sử", "Video đã đăng nhưng không lưu được lịch sử.")
+            QMessageBox.warning(self, "Lịch sử", "Không lưu được lịch sử video. Hãy kiểm tra lại trước khi thử tải lên lần nữa.")
 
     @Slot()
     def _on_cancel_upload(self) -> None:
@@ -1383,7 +1342,7 @@ class DashboardPage(QWidget):
         if not visible:
             return
 
-        is_scheduled = not simulated and (getattr(result, "status", None) == JobStatus.SCHEDULED or self.state.publish_at is not None)
+        is_scheduled = not simulated and (getattr(result, "status", None) == JobStatus.SCHEDULED)
 
         if simulated:
             self.lbl_upload_status.setText("Chạy thử hoàn tất, chưa đăng YouTube")
@@ -1395,26 +1354,15 @@ class DashboardPage(QWidget):
         elif is_scheduled:
             local_time_str = self.dt_publish.dateTime().toString("dd/MM/yyyy HH:mm")
             self.lbl_upload_status.setText(f"Đã lên lịch phát hành ({local_time_str})")
-            self.lbl_upload_summary.setText(f"Video đã tải lên ở chế độ Riêng tư. YouTube sẽ tự động công khai vào lúc {local_time_str} (giờ máy tính).")
+            self.lbl_upload_summary.setText(f"Video đã tải lên ở chế độ Riêng tư. Lịch công khai dự kiến là lúc {local_time_str} (giờ máy tính).")
             self.lbl_upload_summary.setVisible(True)
             self.lbl_upload_url.setText(f"Liên kết quản lý: {result.url}")
             self.lbl_upload_url.setVisible(True)
             self.btn_open_youtube.setVisible(True)
             self.btn_copy_link.setVisible(True)
 
-    @Slot()
-    def _on_open_youtube_clicked(self) -> None:
-        if self.state.upload_result and self.state.upload_result.url:
-            QDesktopServices.openUrl(QUrl(self.state.upload_result.url))
-
-    @Slot()
-    def _on_copy_link_clicked(self) -> None:
-        if self.state.upload_result and self.state.upload_result.url:
-            clip = QGuiApplication.clipboard()
-            clip.setText(self.state.upload_result.url)
-            self._notify("info", "Đã sao chép", "Đã sao chép liên kết video YouTube.")
         else:
-            self.lbl_upload_status.setText("Đã đăng thành công lên YouTube!")
+            self.lbl_upload_status.setText("Đã tải video lên YouTube")
             self.lbl_upload_summary.setVisible(False)
             self.lbl_upload_url.setText(f"Liên kết: {result.url}")
             self.lbl_upload_url.setVisible(True)
@@ -1429,8 +1377,7 @@ class DashboardPage(QWidget):
     @Slot()
     def _on_copy_link_clicked(self) -> None:
         if self.state.upload_result and self.state.upload_result.url:
-            clip = QGuiApplication.clipboard()
-            clip.setText(self.state.upload_result.url)
+            QGuiApplication.clipboard().setText(self.state.upload_result.url)
             self._notify("info", "Đã sao chép", "Đã sao chép liên kết video YouTube.")
 
     # ---------------------------------------------------------

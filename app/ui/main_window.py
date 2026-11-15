@@ -334,10 +334,13 @@ class MainWindow(QMainWindow):
             self.notify(
                 "success",
                 "Đăng video thành công!",
-                f"Video đã xuất bản lên YouTube.",
+                "YouTube đã nhận video. Chế độ công khai phụ thuộc trạng thái thực tế trên YouTube.",
                 action_text="Mở YouTube" if url else None,
                 action_callback=open_url if url else None,
             )
+            return
+        elif status == JobStatus.SCHEDULED.value:
+            self.lbl_active_job_status.setText('Đã hẹn giờ (chưa xác nhận công khai)')
             return
         elif status:
             self.lbl_active_job_status.setText(status)

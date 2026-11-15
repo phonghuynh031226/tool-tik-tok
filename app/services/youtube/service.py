@@ -811,7 +811,8 @@ class YouTubeService:
                         changes = {'schedule_checked_at': now.isoformat(), 'uploaded_at': None}
                         if same_channel and status.get('privacyStatus') == 'public' and not failed:
                             changes.update(processing_status=JobStatus.UPLOADED, privacy_status='public',
-                                           uploaded_at=now.isoformat(), schedule_needs_review=False, error_message=None)
+                                           uploaded_at=now.isoformat(), schedule_needs_review=False,
+                                           schedule_public_confirmed=True, error_message=None)
                             history.update(job['id'], changes)
                             published.append(UploadResult(job['youtube_video_id'],
                                 f"https://www.youtube.com/watch?v={job['youtube_video_id']}", channel_id))

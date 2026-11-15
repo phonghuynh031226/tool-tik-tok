@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.contracts import DownloadResult, GeneratedContent, VideoMeta
-from app.services.gemini import select_preferred_model
+from app.ui.model_loading import populate_models
 from app.ui import tokens
 from app.ui.components import AppButton, Card, EmptyState, ToastManager
 from app.ui.icons import get_icon
@@ -287,17 +287,7 @@ class ToolsPage(QWidget):
         row_cfg.addWidget(lbl_model)
 
         self.combo_model = QComboBox(in_card)
-        try:
-            models = self.services.generator.list_models()
-        except Exception:
-            models = ["gemini-2.0-flash", "gemini-1.5-pro"]
-        saved_model = self.services.settings.get("gemini_model") if self.services.settings else None
-        chosen, _ = select_preferred_model(models, saved_model)
-        for m in models:
-            self.combo_model.addItem(m, m)
-        idx = self.combo_model.findData(chosen)
-        if idx >= 0:
-            self.combo_model.setCurrentIndex(idx)
+        populate_models(self.combo_model, self.services, notify=False)
         row_cfg.addWidget(self.combo_model, stretch=1)
 
         lbl_tone = QLabel("Phong cách:", in_card)

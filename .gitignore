@@ -9,6 +9,7 @@ dist/
 bin/*.exe
 client_secret*.json
 token*
+!app/ui/tokens.py
 *.db
 *.db-*
 __pycache__/

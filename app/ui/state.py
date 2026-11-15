@@ -261,7 +261,7 @@ class JobState(QObject):
             raise ValueError('YouTube chưa trả mã video/kênh hợp lệ.')
         self.dry_run_result = None
         self._upload_result = result
-        self._status = JobStatus.UPLOADED
+        self._status = result.status
         self.upload_changed.emit(result)
         self.status_changed.emit(self._status.value)
         self.job_changed.emit()

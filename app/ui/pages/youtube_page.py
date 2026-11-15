@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Optional
 
 from PySide6.QtCore import QThreadPool, QUrl, Qt, Slot
@@ -12,7 +13,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from app.contracts import UploadRequest, UploadResult
+from app.contracts import JobStatus, UploadRequest, UploadResult
 from app.ui.components import AppButton, Card, UploadConfirmDialog
 from app.ui.services import ServiceContainer
 from app.ui.state import JobState, format_hashtags
@@ -339,6 +340,7 @@ class YouTubePage(QWidget):
             if channel is None:
                 from app.contracts import ChannelInfo
                 channel = ChannelInfo("dry-run-channel", "Chạy thử — không đăng video")
+            req = replace(req, channel_id=channel.id)
         except Exception as exc:
             QMessageBox.critical(self, "Lỗi kiểm tra", str(exc))
             return
@@ -380,6 +382,12 @@ class YouTubePage(QWidget):
             return
         self.state.set_upload_result(res)
         try:
+            if res.status == JobStatus.SCHEDULED and any(
+                record.get("youtube_video_id") == res.video_id
+                and (record.get("channel_id") or record.get("youtube_channel_id")) == res.channel_id
+                for record in self.services.history.list_scheduled()
+            ):
+                return  # The backend already persisted this scheduled upload.
             meta = self.state.meta
             download = self.state.download_result
             self.services.history.add({
@@ -391,14 +399,16 @@ class YouTubePage(QWidget):
                 "youtube_video_id": res.video_id,
                 "youtube_url": res.url,
                 "youtube_channel_id": res.channel_id,
+                "channel_id": res.channel_id,
+                "scheduled_at": self.state.publish_at,
                 "local_mp4_path": str(self.state.local_video_path),
                 "sha256": download.sha256 if download else "",
-                "status": self.state.status,
-                "privacy_status": self.state.privacy,
+                "status": res.status,
+                "privacy_status": "private" if res.status == JobStatus.SCHEDULED else self.state.privacy,
                 "rights_confirmed": self.state.rights_confirmed,
             })
         except Exception:
-            QMessageBox.warning(self, "Lịch sử", "Video đã đăng nhưng không lưu được lịch sử.")
+            QMessageBox.warning(self, "Lịch sử", "Video đã tải lên nhưng không lưu được lịch sử.")
 
     def _notify(self, toast_type: str, title: str, message: str = "") -> None:
         win = self.window()
@@ -442,7 +452,10 @@ class YouTubePage(QWidget):
         self.result_box.setVisible(visible)
         if not visible:
             return
-        self.lbl_result_status.setText("Chạy thử hoàn tất, chưa đăng YouTube" if simulated else "Đã đăng thành công lên YouTube!")
+        self.lbl_result_status.setText(
+            "Chạy thử hoàn tất, chưa đăng YouTube" if simulated else
+            "Đã hẹn giờ" if res.status == JobStatus.SCHEDULED else "Đã tải lên"
+        )
         self.lbl_upload_summary.setText(res.summary if simulated else "")
         self.lbl_upload_summary.setVisible(simulated)
         self.lbl_result_link.setText("" if simulated else f"Liên kết: {res.url}")

@@ -152,6 +152,9 @@ class ToastManager:
 
     @classmethod
     def instance(cls) -> Optional[ToastManager]:
+        from shiboken6 import isValid
+        if cls._instance is not None and not isValid(cls._instance.window):
+            cls._instance = None
         return cls._instance
 
     def success(self, title: str, message: str = "") -> ToastNotification:
@@ -197,6 +200,10 @@ class ToastManager:
 
     def reposition(self) -> None:
         """Reposition all toasts stacked at bottom-right of the main window."""
+        from shiboken6 import isValid
+        if not isValid(self.window):
+            return
+        self.toasts = [toast for toast in self.toasts if isValid(toast)]
         margin_right = 24
         margin_bottom = 24
         spacing = 10
