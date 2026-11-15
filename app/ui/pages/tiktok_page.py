@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.contracts import DownloadResult, VideoMeta
-from app.ui.components import Card
+from app.ui.components import AppButton, Card
 from app.ui.services import ServiceContainer
 from app.ui.state import JobState
 from app.workers import DownloadVideoWorker, FetchMetaWorker
@@ -75,16 +75,15 @@ class TikTokPage(QWidget):
         self.edit_url.textChanged.connect(lambda t: setattr(self.state, "url", t.strip()))
         row.addWidget(self.edit_url, stretch=1)
 
-        self.btn_paste = QPushButton("Dán", card)
+        self.btn_paste = AppButton("Dán", variant="secondary", icon_name="content-paste", parent=card)
         self.btn_paste.clicked.connect(self._on_paste)
         row.addWidget(self.btn_paste)
 
-        self.btn_download = QPushButton("Bắt đầu tải", card)
-        self.btn_download.setProperty("class", "primaryBtn")
+        self.btn_download = AppButton("Bắt đầu tải", variant="primary", icon_name="download", parent=card)
         self.btn_download.clicked.connect(self._on_download)
         row.addWidget(self.btn_download)
 
-        self.btn_pick_file = QPushButton("Chọn MP4 từ máy", card)
+        self.btn_pick_file = AppButton("Chọn MP4 từ máy", variant="secondary", icon_name="folder-open", parent=card)
         self.btn_pick_file.clicked.connect(self._on_pick_file)
         row.addWidget(self.btn_pick_file)
         c_layout.addLayout(row)
@@ -195,18 +194,30 @@ class TikTokPage(QWidget):
         worker.signals.error.connect(self._on_error)
         self.thread_pool.start(worker)
 
+    def _notify(self, toast_type: str, title: str, message: str = "") -> None:
+        win = self.window()
+        if win and hasattr(win, "notify"):
+            win.notify(toast_type=toast_type, title=title, message=message)
+        else:
+            if toast_type in ("error", "critical"):
+                QMessageBox.critical(self, title, message)
+            elif toast_type == "warning":
+                QMessageBox.warning(self, title, message)
+            else:
+                QMessageBox.information(self, title, message)
+
     @Slot(object)
     def _on_downloaded(self, res: DownloadResult) -> None:
         self.progress_bar.setValue(100)
         self.btn_download.setEnabled(True)
         self._active_download_worker = None
         self.state.set_download_result(res)
-        QMessageBox.information(self, "Thành công", f"Đã tải xong video: {res.path.name}")
+        self._notify("success", "Tải video hoàn tất", f"Đã lưu tệp video: {res.path.name}")
 
     @Slot(str)
     def _on_error(self, err: str) -> None:
         self.btn_download.setEnabled(True)
         self.progress_bar.setVisible(False)
         self._active_download_worker = None
-        QMessageBox.critical(self, "Lỗi", f"Thao tác thất bại: {err}")
+        self._notify("error", "Lỗi tải video", f"Thao tác thất bại: {err}")
 

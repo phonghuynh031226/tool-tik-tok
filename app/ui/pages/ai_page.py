@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 
 from app.contracts import GeneratedContent
 from app.services.gemini import select_preferred_model
-from app.ui.components import Card
+from app.ui.components import AppButton, Card
 from app.ui.services import ServiceContainer
 from app.ui.state import JobState, format_hashtags
 from app.workers import GenerateContentWorker
@@ -104,16 +104,15 @@ class AIPage(QWidget):
         settings_card.add_layout(s_layout)
 
         btn_row = QHBoxLayout()
-        self.btn_generate = QPushButton("✨ Tạo nội dung AI ngay", settings_card)
-        self.btn_generate.setProperty("class", "primaryBtn")
+        self.btn_generate = AppButton("Tạo nội dung AI ngay", variant="primary", icon_name="creation", parent=settings_card)
         self.btn_generate.clicked.connect(self._on_generate)
         btn_row.addWidget(self.btn_generate)
 
-        self.btn_restore = QPushButton("Khôi phục tiêu đề gốc", settings_card)
+        self.btn_restore = AppButton("Khôi phục tiêu đề gốc", variant="secondary", icon_name="history", parent=settings_card)
         self.btn_restore.clicked.connect(lambda: self.state.restore_original())
         btn_row.addWidget(self.btn_restore)
 
-        self.btn_copy = QPushButton("Sao chép tất cả", settings_card)
+        self.btn_copy = AppButton("Sao chép tất cả", variant="secondary", icon_name="content-copy", parent=settings_card)
         self.btn_copy.clicked.connect(self._on_copy_all)
         btn_row.addWidget(self.btn_copy)
         btn_row.addStretch()
@@ -269,6 +268,18 @@ class AIPage(QWidget):
         worker.signals.error.connect(self._on_error)
         self.thread_pool.start(worker)
 
+    def _notify(self, toast_type: str, title: str, message: str = "") -> None:
+        win = self.window()
+        if win and hasattr(win, "notify"):
+            win.notify(toast_type=toast_type, title=title, message=message)
+        else:
+            if toast_type in ("error", "critical"):
+                QMessageBox.critical(self, title, message)
+            elif toast_type == "warning":
+                QMessageBox.warning(self, title, message)
+            else:
+                QMessageBox.information(self, title, message)
+
     @Slot(object)
     def _on_finished(self, content: GeneratedContent) -> None:
         if hasattr(self, "_ai_timer") and self._ai_timer.isActive():
@@ -277,7 +288,7 @@ class AIPage(QWidget):
         self.btn_generate.setEnabled(True)
         self.progress_bar.setVisible(False)
         self.state.set_generated_content(content)
-        QMessageBox.information(self, "Hoàn tất", "Đã tạo nội dung AI thành công!")
+        self._notify("success", "Tạo nội dung hoàn tất", "Đã tạo nội dung AI thành công!")
 
     @Slot(str)
     def _on_error(self, err: str) -> None:
@@ -285,15 +296,15 @@ class AIPage(QWidget):
             self._ai_timer.stop()
         self.btn_generate.setEnabled(True)
         self.progress_bar.setVisible(False)
-        QMessageBox.critical(self, "Lỗi", f"Lỗi sinh nội dung AI: {err}")
+        self._notify("error", "Lỗi tạo nội dung", f"Lỗi sinh nội dung AI: {err}")
 
     @Slot()
     def _on_ui_timeout(self) -> None:
         if not self.btn_generate.isEnabled():
             self.progress_bar.setVisible(False)
             self.btn_generate.setEnabled(True)
-            QMessageBox.critical(
-                self,
+            self._notify(
+                "error",
                 "Quá thời gian phản hồi",
                 "Quá thời gian chờ tạo nội dung AI (timeout 60 giây). "
                 "Thao tác đã bị dừng. Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau.",
@@ -305,7 +316,7 @@ class AIPage(QWidget):
         if self.state.hashtags:
             text += " ".join(f"#{t}" for t in self.state.hashtags) + "\n"
         QGuiApplication.clipboard().setText(text)
-        QMessageBox.information(self, "Đã sao chép", "Đã sao chép nội dung vào bộ nhớ tạm.")
+        self._notify("info", "Đã sao chép", "Đã sao chép nội dung vào bộ nhớ tạm.")
 
 
     @Slot(str, str)

@@ -100,6 +100,24 @@ class JobState(QObject):
     def local_video_path(self) -> Optional[Path]:
         return self._local_video_path
 
+    @local_video_path.setter
+    def local_video_path(self, path: Optional[Path]) -> None:
+        if path is not None:
+            self.set_local_file(Path(path))
+        else:
+            self._local_video_path = None
+
+    @property
+    def video_path(self) -> Optional[Path]:
+        return self._local_video_path
+
+    @video_path.setter
+    def video_path(self, path: Optional[Path]) -> None:
+        if path is not None:
+            self.set_local_file(Path(path))
+        else:
+            self._local_video_path = None
+
     def set_download_result(self, result: DownloadResult) -> None:
         self._download_result = result
         self._local_video_path = result.path

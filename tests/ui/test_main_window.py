@@ -18,23 +18,20 @@ def test_main_window_init_and_navigation(qtbot):
 
     stack = window.findChild(QStackedWidget)
     assert stack is not None
-    assert stack.count() == 6
+    assert stack.count() == 5
 
     # Test clicking each nav button and verify stack index changes
-    window.btn_nav_tiktok.click()
+    window.btn_nav_tools.click()
     assert stack.currentIndex() == 1
 
-    window.btn_nav_ai.click()
+    window.btn_nav_youtube.click()
     assert stack.currentIndex() == 2
 
-    window.btn_nav_youtube.click()
+    window.btn_nav_history.click()
     assert stack.currentIndex() == 3
 
-    window.btn_nav_history.click()
-    assert stack.currentIndex() == 4
-
     window.btn_nav_settings.click()
-    assert stack.currentIndex() == 5
+    assert stack.currentIndex() == 4
 
     window.btn_nav_dashboard.click()
     assert stack.currentIndex() == 0

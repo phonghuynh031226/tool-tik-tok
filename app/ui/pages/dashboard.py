@@ -6,16 +6,20 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import QThreadPool, QTimer, QUrl, Qt, Slot
-from PySide6.QtGui import QClipboard, QDesktopServices, QGuiApplication
+from PySide6.QtGui import QClipboard, QDesktopServices, QGuiApplication, QResizeEvent
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QProgressBar, QPushButton,
     QRadioButton, QScrollArea, QTextEdit, QVBoxLayout, QWidget,
 )
 
-from app.contracts import DownloadResult, GeneratedContent, VideoMeta
+from app.contracts import DownloadResult, GeneratedContent, JobStatus, VideoMeta
 from app.services.gemini import select_preferred_model
-from app.ui.components import Card, UploadConfirmDialog, VideoPlayerWidget
+from app.ui import tokens
+from app.ui.components import (
+    AppButton, Card, ConfirmDialog, UploadConfirmDialog, VideoPlayerWidget,
+    WorkflowStepper,
+)
 from app.ui.services import ServiceContainer
 from app.ui.state import JobState, format_hashtags
 from app.workers.service_workers import DryRunResult
@@ -58,9 +62,9 @@ class DashboardPage(QWidget):
         outer_layout.setContentsMargins(0, 0, 0, 0)
 
         # Scroll area to comfortably fit 1080p and 720p screens
-        scroll = QScrollArea(self)
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area = QScrollArea(self)
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         container = QWidget()
         layout = QVBoxLayout(container)
@@ -74,10 +78,15 @@ class DashboardPage(QWidget):
         header_layout.addWidget(header_title)
         header_layout.addStretch()
 
-        self.btn_reset_job = QPushButton("Làm mới tác vụ", container)
+        self.btn_reset_job = AppButton("Làm mới tác vụ", variant="ghost", icon_name="refresh", parent=container)
         self.btn_reset_job.clicked.connect(self._on_reset_clicked)
         header_layout.addWidget(self.btn_reset_job)
         layout.addLayout(header_layout)
+
+        # Stepper for 4-step workflow
+        self.stepper = WorkflowStepper(container)
+        self.stepper.step_selected.connect(self._scroll_to_step)
+        layout.addWidget(self.stepper)
 
         # ==========================================
         # BƯỚC 1: TIKTOK
@@ -101,16 +110,15 @@ class DashboardPage(QWidget):
         self.input_url.textChanged.connect(self._on_url_changed)
         url_row.addWidget(self.input_url, stretch=1)
 
-        self.btn_paste = QPushButton("Dán", self.step1_card)
+        self.btn_paste = AppButton("Dán", variant="secondary", icon_name="content-paste", parent=self.step1_card)
         self.btn_paste.clicked.connect(self._on_paste_clicked)
         url_row.addWidget(self.btn_paste)
 
-        self.btn_download = QPushButton("Tải video", self.step1_card)
-        self.btn_download.setProperty("class", "primaryBtn")
+        self.btn_download = AppButton("Tải video", variant="primary", icon_name="download", parent=self.step1_card)
         self.btn_download.clicked.connect(self._on_download_clicked)
         url_row.addWidget(self.btn_download)
 
-        self.btn_pick_file = QPushButton("Chọn MP4 từ máy", self.step1_card)
+        self.btn_pick_file = AppButton("Chọn MP4 từ máy", variant="secondary", icon_name="folder-open", parent=self.step1_card)
         self.btn_pick_file.clicked.connect(self._on_pick_file_clicked)
         url_row.addWidget(self.btn_pick_file)
 
@@ -124,8 +132,7 @@ class DashboardPage(QWidget):
         self.progress_download.setVisible(False)
         progress_row.addWidget(self.progress_download, stretch=1)
 
-        self.btn_cancel_download = QPushButton("Hủy tải", self.step1_card)
-        self.btn_cancel_download.setProperty("class", "dangerBtn")
+        self.btn_cancel_download = AppButton("Hủy tải", variant="danger", icon_name="close-circle", parent=self.step1_card)
         self.btn_cancel_download.setVisible(False)
         self.btn_cancel_download.clicked.connect(self._on_cancel_download)
         progress_row.addWidget(self.btn_cancel_download)
@@ -163,7 +170,6 @@ class DashboardPage(QWidget):
 
         s1_layout.addWidget(self.tiktok_meta_box)
         self.step1_card.add_layout(s1_layout)
-        layout.addWidget(self.step1_card)
 
         # ==========================================
         # BƯỚC 2: PREVIEW
@@ -176,7 +182,6 @@ class DashboardPage(QWidget):
         )
         self.player_widget = VideoPlayerWidget(self.step2_card)
         self.step2_card.add_widget(self.player_widget)
-        layout.addWidget(self.step2_card)
 
         # ==========================================
         # BƯỚC 3: AI
@@ -203,16 +208,15 @@ class DashboardPage(QWidget):
         self._populate_models()
         ai_top_row.addWidget(self.combo_model)
 
-        self.btn_generate_ai = QPushButton("✨ Tạo nội dung AI", self.step3_card)
-        self.btn_generate_ai.setProperty("class", "primaryBtn")
+        self.btn_generate_ai = AppButton("Tạo nội dung AI", variant="primary", icon_name="creation", parent=self.step3_card)
         self.btn_generate_ai.clicked.connect(self._on_generate_clicked)
         ai_top_row.addWidget(self.btn_generate_ai)
 
-        self.btn_restore_original = QPushButton("Khôi phục gốc", self.step3_card)
+        self.btn_restore_original = AppButton("Khôi phục gốc", variant="secondary", icon_name="history", parent=self.step3_card)
         self.btn_restore_original.clicked.connect(self._on_restore_original_clicked)
         ai_top_row.addWidget(self.btn_restore_original)
 
-        self.btn_copy_all = QPushButton("Sao chép", self.step3_card)
+        self.btn_copy_all = AppButton("Sao chép", variant="secondary", icon_name="content-copy", parent=self.step3_card)
         self.btn_copy_all.clicked.connect(self._on_copy_all_clicked)
         ai_top_row.addWidget(self.btn_copy_all)
 
@@ -279,7 +283,6 @@ class DashboardPage(QWidget):
 
         s3_layout.addLayout(tags_grid)
         self.step3_card.add_layout(s3_layout)
-        layout.addWidget(self.step3_card)
 
         # ==========================================
         # BƯỚC 4: YOUTUBE
@@ -316,7 +319,7 @@ class DashboardPage(QWidget):
         ch_text_box.addWidget(self.lbl_channel_id)
         ch_layout.addLayout(ch_text_box, stretch=1)
 
-        self.btn_refresh_channel = QPushButton("Làm mới kênh", self.channel_box)
+        self.btn_refresh_channel = AppButton("Làm mới kênh", variant="ghost", icon_name="refresh", parent=self.channel_box)
         self.btn_refresh_channel.clicked.connect(self._refresh_channel_info)
         ch_layout.addWidget(self.btn_refresh_channel)
         s4_layout.addWidget(self.channel_box)
@@ -371,7 +374,7 @@ class DashboardPage(QWidget):
 
         # Checkbox: Chế độ Dry-run
         self.chk_dry_run = QCheckBox(
-            "🧪 Chế độ chạy thử (Dry-run) - Chạy toàn bộ luồng nhưng không gọi tải lên YouTube thật",
+            "Chế độ chạy thử (Dry-run) - Chạy toàn bộ luồng nhưng không gọi tải lên YouTube thật",
             self.step4_card,
         )
         self.chk_dry_run.setStyleSheet("color: #93c5fd;")
@@ -382,15 +385,13 @@ class DashboardPage(QWidget):
         upload_action_row = QHBoxLayout()
         upload_action_row.setSpacing(12)
 
-        self.btn_upload = QPushButton("🚀 Tải lên YouTube", self.step4_card)
-        self.btn_upload.setProperty("class", "primaryBtn")
+        self.btn_upload = AppButton("Tải lên YouTube", variant="primary", icon_name="upload", parent=self.step4_card)
         self.btn_upload.setMinimumHeight(40)
         self.btn_upload.setEnabled(False)  # Disabled until rights & kids & title are valid
         self.btn_upload.clicked.connect(self._on_upload_clicked)
         upload_action_row.addWidget(self.btn_upload, stretch=1)
 
-        self.btn_cancel_upload = QPushButton("Hủy đăng", self.step4_card)
-        self.btn_cancel_upload.setProperty("class", "dangerBtn")
+        self.btn_cancel_upload = AppButton("Hủy đăng", variant="danger", icon_name="close-circle", parent=self.step4_card)
         self.btn_cancel_upload.setMinimumHeight(40)
         self.btn_cancel_upload.setVisible(False)
         self.btn_cancel_upload.clicked.connect(self._on_cancel_upload)
@@ -414,7 +415,7 @@ class DashboardPage(QWidget):
         res_layout = QVBoxLayout(self.upload_result_box)
         res_layout.setSpacing(8)
 
-        self.lbl_upload_status = QLabel("✅ Tải lên thành công!")
+        self.lbl_upload_status = QLabel("Tải lên thành công!")
         self.lbl_upload_status.setStyleSheet("font-weight: 700; color: #ffffff; font-size: 14px;")
         res_layout.addWidget(self.lbl_upload_status)
         self.lbl_upload_summary = QLabel(self.upload_result_box)
@@ -429,11 +430,11 @@ class DashboardPage(QWidget):
         res_btn_row = QHBoxLayout()
         res_btn_row.setSpacing(8)
 
-        self.btn_open_youtube = QPushButton("Mở YouTube", self.upload_result_box)
+        self.btn_open_youtube = AppButton("Mở YouTube", variant="secondary", icon_name="open-in-new", parent=self.upload_result_box)
         self.btn_open_youtube.clicked.connect(self._on_open_youtube_clicked)
         res_btn_row.addWidget(self.btn_open_youtube)
 
-        self.btn_copy_link = QPushButton("Sao chép liên kết", self.upload_result_box)
+        self.btn_copy_link = AppButton("Sao chép liên kết", variant="secondary", icon_name="content-copy", parent=self.upload_result_box)
         self.btn_copy_link.clicked.connect(self._on_copy_link_clicked)
         res_btn_row.addWidget(self.btn_copy_link)
         res_btn_row.addStretch()
@@ -442,13 +443,62 @@ class DashboardPage(QWidget):
         s4_layout.addWidget(self.upload_result_box)
 
         self.step4_card.add_layout(s4_layout)
-        layout.addWidget(self.step4_card)
+
+        # Responsive Grid Layout for 4 steps: 2 columns when wide, 1 column when narrow
+        self.steps_grid = QGridLayout()
+        self.steps_grid.setSpacing(tokens.SPACE_LG)
+        layout.addLayout(self.steps_grid)
+
+        self._is_wide_layout: Optional[bool] = None
+        self._update_layout_mode(1200)
 
         # Add bottom stretch
         layout.addStretch()
 
-        scroll.setWidget(container)
-        outer_layout.addWidget(scroll)
+        self.scroll_area.setWidget(container)
+        outer_layout.addWidget(self.scroll_area)
+
+    def _scroll_to_step(self, step: int) -> None:
+        cards = {
+            1: self.step1_card,
+            2: self.step2_card,
+            3: self.step3_card,
+            4: self.step4_card,
+        }
+        card = cards.get(step)
+        if card:
+            self.scroll_area.ensureWidgetVisible(card)
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._update_layout_mode(event.size().width())
+
+    def _update_layout_mode(self, width: int) -> None:
+        """Switch between 2-column layout (>=1150px) and 1-column layout (<1150px)."""
+        is_wide = width >= 1150
+        if self._is_wide_layout == is_wide:
+            return
+        self._is_wide_layout = is_wide
+
+        self.steps_grid.removeWidget(self.step1_card)
+        self.steps_grid.removeWidget(self.step2_card)
+        self.steps_grid.removeWidget(self.step3_card)
+        self.steps_grid.removeWidget(self.step4_card)
+
+        if is_wide:
+            self.steps_grid.addWidget(self.step1_card, 0, 0)
+            self.steps_grid.addWidget(self.step2_card, 1, 0)
+            self.steps_grid.addWidget(self.step3_card, 0, 1)
+            self.steps_grid.addWidget(self.step4_card, 1, 1)
+            self.steps_grid.setColumnStretch(0, 1)
+            self.steps_grid.setColumnStretch(1, 1)
+        else:
+            self.steps_grid.addWidget(self.step1_card, 0, 0)
+            self.steps_grid.addWidget(self.step2_card, 1, 0)
+            self.steps_grid.addWidget(self.step3_card, 2, 0)
+            self.steps_grid.addWidget(self.step4_card, 3, 0)
+            self.steps_grid.setColumnStretch(0, 1)
+            self.steps_grid.setColumnStretch(1, 0)
 
     def _populate_models(self) -> None:
         saved_model = self.services.settings.get("gemini_model") if self.services.settings else None
@@ -565,6 +615,46 @@ class DashboardPage(QWidget):
             self.chk_dry_run.blockSignals(False)
 
         self._update_upload_button_state()
+        self._update_stepper_state()
+
+    def _update_stepper_state(self) -> None:
+        if not hasattr(self, "stepper"):
+            return
+        # Step 1: Nguồn Video
+        if self._active_download_worker is not None:
+            self.stepper.set_step_state(1, "active")
+        elif self.state.video_path or self.state.status in (
+            JobStatus.DOWNLOADED, JobStatus.CONTENT_READY, JobStatus.UPLOADING, JobStatus.UPLOADED, JobStatus.SCHEDULED
+        ):
+            self.stepper.set_step_state(1, "done")
+        elif self.state.url or self.state.meta:
+            self.stepper.set_step_state(1, "active")
+        else:
+            self.stepper.set_step_state(1, "pending")
+
+        # Step 2: Xem trước
+        if self.state.video_path:
+            self.stepper.set_step_state(2, "done")
+        else:
+            self.stepper.set_step_state(2, "pending")
+
+        # Step 3: Tối ưu AI
+        if getattr(self, "_active_ai_worker", None) is not None:
+            self.stepper.set_step_state(3, "active")
+        elif (self.state.title and self.state.title != (self.state.meta.title if self.state.meta else "")) or self.state.status in (
+            JobStatus.CONTENT_READY, JobStatus.UPLOADING, JobStatus.UPLOADED, JobStatus.SCHEDULED
+        ):
+            self.stepper.set_step_state(3, "done")
+        else:
+            self.stepper.set_step_state(3, "pending")
+
+        # Step 4: Xuất bản YouTube
+        if self._active_upload_worker is not None or self.state.status == JobStatus.UPLOADING:
+            self.stepper.set_step_state(4, "active")
+        elif self.state.status in (JobStatus.UPLOADED, JobStatus.SCHEDULED):
+            self.stepper.set_step_state(4, "done")
+        else:
+            self.stepper.set_step_state(4, "pending")
 
     def _update_title_counter(self, text: str) -> None:
         count = len(text)
@@ -662,7 +752,7 @@ class DashboardPage(QWidget):
         self.btn_cancel_download.setVisible(False)
         self.progress_download.setVisible(False)
         self._active_download_worker = None
-        QMessageBox.information(self, "Đã hủy", "Đã hủy tiến trình tải video.")
+        self._notify("info", "Đã hủy", "Đã hủy tiến trình tải video.")
 
     # ---------------------------------------------------------
     # Handlers: Step 2 Preview
@@ -713,7 +803,8 @@ class DashboardPage(QWidget):
             self._ai_timer.stop()
         self.progress_ai.setValue(100)
         self.btn_generate_ai.setEnabled(True)
-        self.btn_generate_ai.setText("✨ Tạo lại nội dung")
+        self.btn_generate_ai.setText("Tạo lại nội dung")
+        self.btn_generate_ai.set_icon_name("refresh")
         self.progress_ai.setVisible(False)
         self.state.set_generated_content(content)
 
@@ -729,6 +820,19 @@ class DashboardPage(QWidget):
                 "Thao tác đã bị dừng. Vui lòng kiểm tra lại kết nối mạng hoặc thử lại sau.",
             )
 
+    def _notify(self, toast_type: str, title: str, message: str = "") -> None:
+        """Helper to post toast notification or fall back to message box."""
+        win = self.window()
+        if win and hasattr(win, "notify"):
+            win.notify(toast_type=toast_type, title=title, message=message)
+        else:
+            if toast_type in ("error", "critical"):
+                QMessageBox.critical(self, title, message)
+            elif toast_type == "warning":
+                QMessageBox.warning(self, title, message)
+            else:
+                QMessageBox.information(self, title, message)
+
     @Slot()
     def _on_restore_original_clicked(self) -> None:
         self.state.restore_original()
@@ -740,13 +844,16 @@ class DashboardPage(QWidget):
         if self.state.hashtags:
             text += " ".join(f"#{t}" for t in self.state.hashtags) + "\n"
         clip.setText(text)
-        QMessageBox.information(self, "Đã sao chép", "Đã sao chép tiêu đề, mô tả và hashtag vào bộ nhớ tạm.")
+        self._notify("info", "Đã sao chép", "Đã sao chép tiêu đề, mô tả và hashtag vào bộ nhớ tạm.")
 
     @Slot(str)
     def _on_title_changed(self, text: str) -> None:
         self.state.title = text
         self._update_title_counter(text)
         self._update_upload_button_state()
+        self._update_stepper_state()
+
+
 
     @Slot()
     def _on_desc_changed(self) -> None:
@@ -777,6 +884,9 @@ class DashboardPage(QWidget):
         color = {'checking': '#facc15', 'connected': '#22c55e', 'disconnected': '#ef4444'}[state]
         self.lbl_channel_indicator.setStyleSheet(f'font-size:20px;color:{color};')
         self._update_upload_button_state()
+        self._update_stepper_state()
+
+
 
     @Slot(int)
     def _on_privacy_changed(self, index: int) -> None:
@@ -793,16 +903,25 @@ class DashboardPage(QWidget):
         else:
             self.state.made_for_kids = None
         self._update_upload_button_state()
+        self._update_stepper_state()
+
+
 
     @Slot(bool)
     def _on_rights_changed(self, checked: bool) -> None:
         self.state.rights_confirmed = checked
         self._update_upload_button_state()
+        self._update_stepper_state()
+
+
 
     @Slot(bool)
     def _on_dry_run_toggled(self, checked: bool) -> None:
         self.state.dry_run = checked
         self._update_upload_button_state()
+        self._update_stepper_state()
+
+
 
     def _update_upload_button_state(self) -> None:
         """Lock upload button when prerequisites are unmet."""
@@ -814,9 +933,11 @@ class DashboardPage(QWidget):
         can_click = title_ok and kids_ok and rights_ok and has_video and self.services.upload_enabled(self.state.dry_run) and self.state.can_upload()[0]
         self.btn_upload.setEnabled(can_click)
         if self.state.dry_run:
-            self.btn_upload.setText("🧪 Chạy thử đăng YouTube (Dry-run)")
+            self.btn_upload.setText("Chạy thử đăng YouTube (Dry-run)")
+            self.btn_upload.set_icon_name("flask")
         else:
-            self.btn_upload.setText("🚀 Tải lên YouTube")
+            self.btn_upload.setText("Tải lên YouTube")
+            self.btn_upload.set_icon_name("upload")
 
     @Slot()
     def _on_upload_clicked(self) -> None:
@@ -868,6 +989,9 @@ class DashboardPage(QWidget):
             return
         self.progress_upload.setValue(100)
         self._update_upload_button_state()
+        self._update_stepper_state()
+
+
         self.btn_cancel_upload.setVisible(False)
         self._active_upload_worker = None
         if isinstance(result, DryRunResult):
@@ -896,10 +1020,13 @@ class DashboardPage(QWidget):
     def _on_upload_cancelled(self) -> None:
         self.services.connection.end_upload(self)
         self._update_upload_button_state()
+        self._update_stepper_state()
+
+
         self.btn_cancel_upload.setVisible(False)
         self.progress_upload.setVisible(False)
         self._active_upload_worker = None
-        QMessageBox.information(self, "Đã hủy", "Đã hủy quá trình tải lên YouTube.")
+        self._notify("info", "Đã hủy", "Đã hủy quá trình tải lên YouTube.")
 
     @Slot(object)
     def _on_upload_result(self, result) -> None:
@@ -908,7 +1035,7 @@ class DashboardPage(QWidget):
         self.upload_result_box.setVisible(visible)
         if not visible:
             return
-        self.lbl_upload_status.setText("Chạy thử hoàn tất, chưa đăng YouTube" if simulated else "✅ Đã đăng thành công lên YouTube!")
+        self.lbl_upload_status.setText("Chạy thử hoàn tất, chưa đăng YouTube" if simulated else "Đã đăng thành công lên YouTube!")
         self.lbl_upload_summary.setText(result.summary if simulated else "")
         self.lbl_upload_summary.setVisible(simulated)
         self.lbl_upload_url.setText("" if simulated else f"Liên kết: {result.url}")
@@ -926,7 +1053,7 @@ class DashboardPage(QWidget):
         if self.state.upload_result and self.state.upload_result.url:
             clip = QGuiApplication.clipboard()
             clip.setText(self.state.upload_result.url)
-            QMessageBox.information(self, "Đã sao chép", "Đã sao chép liên kết video YouTube.")
+            self._notify("info", "Đã sao chép", "Đã sao chép liên kết video YouTube.")
 
     # ---------------------------------------------------------
     # Common error & reset
@@ -940,22 +1067,28 @@ class DashboardPage(QWidget):
         self.btn_cancel_download.setVisible(False)
         self.btn_generate_ai.setEnabled(True)
         self._update_upload_button_state()
+        self._update_stepper_state()
+
+
         self.btn_cancel_upload.setVisible(False)
         self.progress_download.setVisible(False)
         self.progress_ai.setVisible(False)
         self.progress_upload.setVisible(False)
         self.state.error_message = message
-        QMessageBox.critical(self, "Lỗi tác vụ", f"Đã xảy ra lỗi: {message}")
+        self._notify("error", "Lỗi tác vụ", f"Đã xảy ra lỗi: {message}")
 
     @Slot()
     def _on_reset_clicked(self) -> None:
-        reply = QMessageBox.question(
-            self,
-            "Làm mới tác vụ",
-            "Bạn có chắc chắn muốn làm mới toàn bộ dữ liệu đang làm việc không?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        dialog = ConfirmDialog(
+            title="Làm mới tác vụ",
+            message="Bạn có chắc chắn muốn làm mới toàn bộ dữ liệu đang làm việc không?",
+            confirm_text="Làm mới",
+            cancel_text="Hủy",
+            is_danger=True,
+            icon_name="refresh",
+            parent=self,
         )
-        if reply == QMessageBox.StandardButton.Yes:
+        if dialog.exec() == ConfirmDialog.DialogCode.Accepted:
             self.state.reset()
             self.player_widget.clear()
             self.upload_result_box.setVisible(False)

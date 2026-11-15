@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QApplication, QScrollArea
+from PySide6.QtWidgets import QApplication, QScrollArea, QTabWidget
 
 from app.contracts import GeneratedContent, JobStatus, UploadRequest, VideoMeta
 from app.ui.components import UploadConfirmDialog
@@ -84,17 +84,19 @@ def capture_all_screenshots():
     window.job_state.made_for_kids = False
 
     pages = [
-        ("dashboard", 0),
-        ("tiktok", 1),
-        ("ai", 2),
-        ("youtube", 3),
-        ("history", 4),
-        ("settings", 5),
+        ("dashboard", 0, None),
+        ("tools_tiktok", 1, 0),
+        ("tools_ai", 1, 1),
+        ("youtube_channels", 2, None),
+        ("history_list", 3, 0),
+        ("history_scheduled", 3, 1),
+        ("settings", 4, None),
     ]
 
     resolutions = [
-        ("1080p", 1920, 1080),
-        ("720p", 1280, 720),
+        ("1920x1080", 1920, 1080),
+        ("1366x768", 1366, 768),
+        ("1000x640", 1000, 640),
     ]
 
     captured_files = []
@@ -104,9 +106,16 @@ def capture_all_screenshots():
         window.show()
         app.processEvents()
 
-        for page_name, idx in pages:
+        for page_name, idx, tab_idx in pages:
             window.stack.setCurrentIndex(idx)
             app.processEvents()
+
+            if tab_idx is not None:
+                widget = window.stack.widget(idx)
+                tab_widget = widget.findChild(QTabWidget)
+                if tab_widget:
+                    tab_widget.setCurrentIndex(tab_idx)
+                    app.processEvents()
 
             # Render grab
             pixmap = window.grab()

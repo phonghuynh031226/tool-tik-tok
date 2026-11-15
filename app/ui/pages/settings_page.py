@@ -17,7 +17,8 @@ from PySide6.QtWidgets import (
 
 from app.core.paths import project_root
 from app.services.gemini import select_preferred_model
-from app.ui.components import Card
+from app.ui import tokens
+from app.ui.components import AppButton, Card, ConfirmDialog
 from app.ui.services import ServiceContainer
 from app.ui.state import JobState
 from app.workers import YtDlpUpdateWorker
@@ -112,7 +113,7 @@ class SettingsPage(QWidget):
         self.edit_download_dir.setText(str(Path(".tmp/downloads").resolve()))
         dir_box.addWidget(self.edit_download_dir, stretch=1)
 
-        self.btn_browse_dir = QPushButton("Chọn thư mục...", gen_card)
+        self.btn_browse_dir = AppButton("Chọn thư mục...", variant="secondary", icon_name="folder-open", parent=gen_card)
         self.btn_browse_dir.clicked.connect(self._browse_dir)
         dir_box.addWidget(self.btn_browse_dir)
         g_layout.addLayout(dir_box, 3, 0, 1, 2)
@@ -149,17 +150,16 @@ class SettingsPage(QWidget):
         self.edit_api_key.setPlaceholderText("Nhập khóa API (lưu trữ mã hóa qua SecretStore)...")
         api_input_row.addWidget(self.edit_api_key, stretch=1)
 
-        self.btn_toggle_key = QPushButton("👁️ Hiện", api_card)
-        self.btn_toggle_key.setFixedWidth(75)
+        self.btn_toggle_key = AppButton("Hiện", variant="secondary", icon_name="eye", parent=api_card)
+        self.btn_toggle_key.setFixedWidth(80)
         self.btn_toggle_key.clicked.connect(self._toggle_key_visibility)
         api_input_row.addWidget(self.btn_toggle_key)
 
-        self.btn_save_key = QPushButton("Lưu khóa", api_card)
-        self.btn_save_key.setProperty("class", "primaryBtn")
+        self.btn_save_key = AppButton("Lưu khóa", variant="primary", icon_name="content-save", parent=api_card)
         self.btn_save_key.clicked.connect(self._save_api_key)
         api_input_row.addWidget(self.btn_save_key)
 
-        self.btn_test_gemini = QPushButton("Kiểm tra kết nối", api_card)
+        self.btn_test_gemini = AppButton("Kiểm tra kết nối", variant="secondary", icon_name="check-circle", parent=api_card)
         self.btn_test_gemini.clicked.connect(self._test_gemini)
         api_input_row.addWidget(self.btn_test_gemini)
 
@@ -202,7 +202,7 @@ class SettingsPage(QWidget):
         # =============================================================
         # 3. YOUTUBE OAUTH & CHANNEL CARD
         # =============================================================
-        yt_card = Card(title="3. Kết nối YouTube (OAuth 2.0)", parent=container)
+        yt_card = Card(title="3. Cấu hình YouTube OAuth", parent=container)
         yt_layout = QVBoxLayout()
         yt_layout.setSpacing(12)
         from app.services.youtube.auth import OAUTH_SCOPE_EXPLANATION
@@ -220,40 +220,45 @@ class SettingsPage(QWidget):
         self.edit_client_secret.setPlaceholderText("Đường dẫn tệp client_secret.json...")
         secret_row.addWidget(self.edit_client_secret, stretch=1)
 
-        self.btn_browse_secret = QPushButton("Chọn file JSON...", yt_card)
+        self.btn_browse_secret = AppButton("Chọn file JSON...", variant="secondary", icon_name="folder-open", parent=yt_card)
         self.btn_browse_secret.clicked.connect(self._browse_client_secret)
         secret_row.addWidget(self.btn_browse_secret)
         yt_layout.addLayout(secret_row)
 
-        # Channel info & Connect / Disconnect
-        ch_box = QFrame(yt_card)
-        ch_box.setStyleSheet(
-            "background-color: #12141e; border: 1px solid #232736; border-radius: 8px; padding: 10px;"
+        # Notice guiding user to YouTube Channels page
+        note_box = QFrame(yt_card)
+        note_box.setStyleSheet(
+            f"background-color: {tokens.BG_CARD_HOVER}; border: 1px solid {tokens.BORDER_SUBTLE}; "
+            f"border-radius: {tokens.RADIUS_MD}px; padding: 12px;"
         )
-        ch_layout = QHBoxLayout(ch_box)
+        note_layout = QHBoxLayout(note_box)
+        note_layout.setSpacing(12)
 
-        ch_info_box = QVBoxLayout()
-        self.lbl_yt_channel_name = QLabel("Kênh YouTube: Chưa kết nối")
-        self.lbl_yt_channel_name.setStyleSheet("font-weight: 600; color: #34d399;")
-        ch_info_box.addWidget(self.lbl_yt_channel_name)
+        from app.ui.icons import get_icon
+        lbl_note_icon = QLabel(note_box)
+        lbl_note_icon.setPixmap(get_icon("info", color=tokens.COLOR_PRIMARY).pixmap(24, 24))
+        note_layout.addWidget(lbl_note_icon)
 
-        self.lbl_yt_channel_id = QLabel("ID kênh: - | Trạng thái: Chưa kết nối")
-        self.lbl_yt_channel_id.setProperty("class", "hintLabel")
-        ch_info_box.addWidget(self.lbl_yt_channel_id)
-        ch_layout.addLayout(ch_info_box, stretch=1)
+        lbl_note_text = QLabel(
+            "Để kết nối, thêm tài khoản mới, đổi kênh mặc định hoặc xem thống kê chi tiết các kênh, "
+            "vui lòng sử dụng mục <b>Kênh YouTube</b> trên thanh điều hướng.",
+            note_box,
+        )
+        lbl_note_text.setWordWrap(True)
+        lbl_note_text.setStyleSheet(f"color: {tokens.TEXT_SECONDARY}; font-size: 13px;")
+        note_layout.addWidget(lbl_note_text, stretch=1)
 
-        self.btn_connect_yt = QPushButton("Kết nối kênh", ch_box)
-        self.btn_connect_yt.clicked.connect(self._connect_youtube)
-        ch_layout.addWidget(self.btn_connect_yt)
-
-        self.btn_disconnect_yt = QPushButton("Ngắt kết nối", ch_box)
-        self.btn_disconnect_yt.setProperty("class", "dangerBtn")
-        self.btn_disconnect_yt.clicked.connect(self._disconnect_youtube)
-        ch_layout.addWidget(self.btn_disconnect_yt)
-
-        yt_layout.addWidget(ch_box)
+        yt_layout.addWidget(note_box)
         yt_card.add_layout(yt_layout)
         layout.addWidget(yt_card)
+
+        # Compatibility attributes
+        self.lbl_yt_channel_name = QLabel(self)
+        self.lbl_yt_channel_id = QLabel(self)
+        self.btn_connect_yt = AppButton("Kết nối kênh", parent=self)
+        self.btn_connect_yt.clicked.connect(self._connect_youtube)
+        self.btn_disconnect_yt = AppButton("Ngắt kết nối", parent=self)
+        self.btn_disconnect_yt.clicked.connect(self._disconnect_youtube)
 
         # =============================================================
         # 4. STORAGE & CACHE CARD
@@ -277,13 +282,12 @@ class SettingsPage(QWidget):
         lbl_log.setProperty("class", "fieldLabel")
         st_layout.addWidget(lbl_log, 0, 1)
 
-        btn_open_logs = QPushButton("📂 Mở thư mục Logs", storage_card)
+        btn_open_logs = AppButton("Mở thư mục Logs", variant="secondary", icon_name="folder-open", parent=storage_card)
         btn_open_logs.clicked.connect(self._open_logs_dir)
         st_layout.addWidget(btn_open_logs, 1, 1)
 
         # Clear Cache button
-        self.btn_clear_cache = QPushButton("🗑️ Xóa bộ nhớ đệm (Clear Cache)...", storage_card)
-        self.btn_clear_cache.setProperty("class", "dangerBtn")
+        self.btn_clear_cache = AppButton("Xóa bộ nhớ đệm (Clear Cache)...", variant="danger", icon_name="trash-can", parent=storage_card)
         self.btn_clear_cache.clicked.connect(self._clear_cache_with_confirm)
         st_layout.addWidget(self.btn_clear_cache, 2, 0, 1, 2)
 
@@ -302,7 +306,7 @@ class SettingsPage(QWidget):
         self.lbl_ytdlp_version.setStyleSheet("font-weight: 600; color: #f8fafc;")
         y_row.addWidget(self.lbl_ytdlp_version, stretch=1)
 
-        self.btn_update_ytdlp = QPushButton("🔄 Kiểm tra & Cập nhật yt-dlp", ytdlp_card)
+        self.btn_update_ytdlp = AppButton("Kiểm tra & Cập nhật yt-dlp", variant="secondary", icon_name="refresh", parent=ytdlp_card)
         self.btn_update_ytdlp.clicked.connect(self._update_ytdlp)
         y_row.addWidget(self.btn_update_ytdlp)
         y_layout.addLayout(y_row)
@@ -446,10 +450,12 @@ class SettingsPage(QWidget):
     def _toggle_key_visibility(self) -> None:
         if self.edit_api_key.echoMode() == QLineEdit.EchoMode.Password:
             self.edit_api_key.setEchoMode(QLineEdit.EchoMode.Normal)
-            self.btn_toggle_key.setText("🔒 Ẩn")
+            self.btn_toggle_key.setText("Ẩn")
+            self.btn_toggle_key.set_icon_name("eye-off")
         else:
             self.edit_api_key.setEchoMode(QLineEdit.EchoMode.Password)
-            self.btn_toggle_key.setText("👁️ Hiện")
+            self.btn_toggle_key.setText("Hiện")
+            self.btn_toggle_key.set_icon_name("eye")
 
     @Slot()
     def _save_api_key(self) -> None:
@@ -527,15 +533,16 @@ class SettingsPage(QWidget):
 
     @Slot()
     def _clear_cache_with_confirm(self) -> None:
-        reply = QMessageBox.question(
-            self,
-            "Xác nhận xóa bộ nhớ đệm (Clear Cache)",
-            "Thao tác này sẽ xóa toàn bộ các tệp tạm trong thư mục .tmp/\n"
-            "Bạn có chắc chắn muốn xóa bộ nhớ đệm không?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+        dialog = ConfirmDialog(
+            title="Xác nhận xóa bộ nhớ đệm (Clear Cache)",
+            message="Thao tác này sẽ xóa toàn bộ các tệp tạm trong thư mục .tmp/\nBạn có chắc chắn muốn xóa bộ nhớ đệm không?",
+            confirm_text="Xóa bộ nhớ đệm",
+            cancel_text="Hủy",
+            is_danger=True,
+            icon_name="trash-can",
+            parent=self,
         )
-        if reply == QMessageBox.StandardButton.Yes:
+        if dialog.exec() == ConfirmDialog.DialogCode.Accepted:
             tmp_dir = project_root() / ".tmp"
             if tmp_dir.exists():
                 count = 0

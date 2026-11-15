@@ -10,9 +10,10 @@ from typing import Any, Mapping
 from PySide6.QtCore import QRunnable, Slot
 
 from app.contracts import (
-    ChannelInfo, ContentGenerator, DownloadResult, GeneratedContent,
-    HistoryRecord, HistoryRepository, TikTokService, UploadRequest,
-    UploadResult, VideoMeta, YouTubeService,
+    ChannelAccount, ChannelInfo, ChannelStats, ContentGenerator, DownloadResult,
+    GeneratedContent, HistoryRecord, HistoryRepository, JobStatus,
+    TikTokService, UploadRequest, UploadResult, VideoMeta, VideoStats,
+    YouTubeService,
 )
 from app.core.cancel import CancelToken
 from app.workers.base import WorkerSignals
@@ -320,3 +321,250 @@ class YouTubeRestoreWorker(QRunnable):
             from app.errors import AppError
             message = error.user_message if isinstance(error, AppError) else 'Không thể kiểm tra phiên YouTube đã lưu. Hãy thử Kết nối kênh.'
             self.signals.error.emit(message)
+
+
+class FetchAccountsWorker(QRunnable):
+    """Worker to list YouTube channel accounts."""
+
+    def __init__(self, service: YouTubeService) -> None:
+        super().__init__()
+        self.service = service
+        self.signals = WorkerSignals()
+        self.cancel_token = CancelToken()
+        self.setAutoDelete(True)
+
+    def cancel(self) -> None:
+        self.cancel_token.cancel()
+
+    @Slot()
+    def run(self) -> None:
+        if self.cancel_token.is_cancelled:
+            self.signals.cancelled.emit()
+            return
+        try:
+            accounts = self.service.list_accounts()
+            if self.cancel_token.is_cancelled:
+                self.signals.cancelled.emit()
+            else:
+                self.signals.finished.emit(accounts)
+        except Exception as exc:
+            if self.cancel_token.is_cancelled:
+                self.signals.cancelled.emit()
+            else:
+                self.signals.error.emit(str(exc) or "Không thể tải danh sách tài khoản YouTube.")
+
+
+class AddAccountWorker(QRunnable):
+    """Worker to authenticate and add a new YouTube account."""
+
+    def __init__(self, service: YouTubeService) -> None:
+        super().__init__()
+        self.service = service
+        self.signals = WorkerSignals()
+        self.cancel_token = CancelToken()
+        self.setAutoDelete(True)
+
+    def cancel(self) -> None:
+        self.cancel_token.cancel()
+
+    @Slot()
+    def run(self) -> None:
+        if self.cancel_token.is_cancelled:
+            self.signals.cancelled.emit()
+            return
+        try:
+            account = self.service.add_account()
+            if self.cancel_token.is_cancelled:
+                self.signals.cancelled.emit()
+            else:
+                self.signals.finished.emit(account)
+        except Exception as exc:
+            if self.cancel_token.is_cancelled:
+                self.signals.cancelled.emit()
+            else:
+                self.signals.error.emit(str(exc) or "Không thể thêm tài khoản YouTube.")
+
+
+class RemoveAccountWorker(QRunnable):
+    """Worker to remove a YouTube channel account."""
+
+    def __init__(self, service: YouTubeService, channel_id: str) -> None:
+        super().__init__()
+        self.service = service
+        self.channel_id = channel_id
+        self.signals = WorkerSignals()
+        self.cancel_token = CancelToken()
+        self.setAutoDelete(True)
+
+    def cancel(self) -> None:
+        self.cancel_token.cancel()
+
+    @Slot()
+    def run(self) -> None:
+        if self.cancel_token.is_cancelled:
+            self.signals.cancelled.emit()
+            return
+        try:
+            self.service.remove_account(self.channel_id)
+            if self.cancel_token.is_cancelled:
+                self.signals.cancelled.emit()
+            else:
+                self.signals.finished.emit(self.channel_id)
+        except Exception as exc:
+            if self.cancel_token.is_cancelled:
+                self.signals.cancelled.emit()
+            else:
+                self.signals.error.emit(str(exc) or "Không thể xóa tài khoản YouTube.")
+
+
+class SetDefaultAccountWorker(QRunnable):
+    """Worker to set a YouTube channel account as default."""
+
+    def __init__(self, service: YouTubeService, channel_id: str) -> None:
+        super().__init__()
+        self.service = service
+        self.channel_id = channel_id
+        self.signals = WorkerSignals()
+        self.cancel_token = CancelToken()
+        self.setAutoDelete(True)
+
+    def cancel(self) -> None:
+        self.cancel_token.cancel()
+
+    @Slot()
+    def run(self) -> None:
+        if self.cancel_token.is_cancelled:
+            self.signals.cancelled.emit()
+            return
+        try:
+            self.service.set_default_account(self.channel_id)
+            if self.cancel_token.is_cancelled:
+                self.signals.cancelled.emit()
+            else:
+                self.signals.finished.emit(self.channel_id)
+        except Exception as exc:
+            if self.cancel_token.is_cancelled:
+                self.signals.cancelled.emit()
+            else:
+                self.signals.error.emit(str(exc) or "Không thể đặt kênh mặc định.")
+
+
+class FetchChannelStatsWorker(QRunnable):
+    """Worker to fetch channel stats."""
+
+    def __init__(self, service: YouTubeService, channel_id: str, force_refresh: bool = False) -> None:
+        super().__init__()
+        self.service = service
+        self.channel_id = channel_id
+        self.force_refresh = force_refresh
+        self.signals = WorkerSignals()
+        self.cancel_token = CancelToken()
+        self.setAutoDelete(True)
+
+    def cancel(self) -> None:
+        self.cancel_token.cancel()
+
+    @Slot()
+    def run(self) -> None:
+        if self.cancel_token.is_cancelled:
+            self.signals.cancelled.emit()
+            return
+        try:
+            stats = self.service.get_channel_stats(self.channel_id, force_refresh=self.force_refresh)
+            if self.cancel_token.is_cancelled:
+                self.signals.cancelled.emit()
+            else:
+                self.signals.finished.emit(stats)
+        except Exception as exc:
+            if self.cancel_token.is_cancelled:
+                self.signals.cancelled.emit()
+            else:
+                self.signals.error.emit(str(exc) or "Không thể tải số liệu thống kê kênh.")
+
+
+class FetchChannelVideosWorker(QRunnable):
+    """Worker to fetch channel videos."""
+
+    def __init__(
+        self,
+        service: YouTubeService,
+        channel_id: str,
+        limit: int = 50,
+        force_refresh: bool = False,
+    ) -> None:
+        super().__init__()
+        self.service = service
+        self.channel_id = channel_id
+        self.limit = limit
+        self.force_refresh = force_refresh
+        self.signals = WorkerSignals()
+        self.cancel_token = CancelToken()
+        self.setAutoDelete(True)
+
+    def cancel(self) -> None:
+        self.cancel_token.cancel()
+
+    @Slot()
+    def run(self) -> None:
+        if self.cancel_token.is_cancelled:
+            self.signals.cancelled.emit()
+            return
+        try:
+            videos = self.service.list_channel_videos(
+                self.channel_id,
+                limit=self.limit,
+                force_refresh=self.force_refresh,
+            )
+            if self.cancel_token.is_cancelled:
+                self.signals.cancelled.emit()
+            else:
+                self.signals.finished.emit(videos)
+        except Exception as exc:
+            if self.cancel_token.is_cancelled:
+                self.signals.cancelled.emit()
+            else:
+                self.signals.error.emit(str(exc) or "Không thể tải danh sách video kênh.")
+
+
+class SyncScheduledWorker(QRunnable):
+    """Worker to sync scheduled video statuses with YouTube."""
+
+    def __init__(
+        self,
+        service: YouTubeService,
+        history: HistoryRepository | None = None,
+    ) -> None:
+        super().__init__()
+        self.service = service
+        self.history = history
+        self.signals = WorkerSignals()
+        self.cancel_token = CancelToken()
+        self.setAutoDelete(True)
+
+    def cancel(self) -> None:
+        self.cancel_token.cancel()
+
+    @Slot()
+    def run(self) -> None:
+        if self.cancel_token.is_cancelled:
+            self.signals.cancelled.emit()
+            return
+        try:
+            published = self.service.sync_scheduled()
+            if self.history is not None:
+                for res in published:
+                    rec = self.history.find_by_video_id(res.video_id)
+                    if rec is not None:
+                        self.history.update(rec["id"], {
+                            "status": JobStatus.UPLOADED,
+                            "youtube_url": res.url,
+                        })
+            if self.cancel_token.is_cancelled:
+                self.signals.cancelled.emit()
+            else:
+                self.signals.finished.emit(published)
+        except Exception as exc:
+            if self.cancel_token.is_cancelled:
+                self.signals.cancelled.emit()
+            else:
+                self.signals.error.emit(str(exc) or "Không thể đồng bộ lịch đăng.")
