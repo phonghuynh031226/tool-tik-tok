@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Optional
+import os
 
 from PySide6.QtCore import QTime, QUrl, Qt, Slot
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
@@ -86,14 +88,22 @@ class VideoPlayerWidget(QWidget):
         """Load an MP4 file into the player."""
         p = Path(path)
         self._current_path = p
-        if p.exists():
-            self.player.setSource(QUrl.fromLocalFile(str(p.resolve())))
-            self.stack_layout.setCurrentWidget(self.video_widget)
-            self.btn_play_pause.setEnabled(True)
-            self.slider.setEnabled(True)
+        is_offscreen = os.environ.get("QT_QPA_PLATFORM") == "offscreen" or (
+            QGuiApplication.platformName() == "offscreen" if QGuiApplication.instance() else False
+        )
+        if p.exists() and not is_offscreen:
+            try:
+                self.player.setSource(QUrl.fromLocalFile(str(p.resolve())))
+                self.stack_layout.setCurrentWidget(self.video_widget)
+                self.btn_play_pause.setEnabled(True)
+                self.slider.setEnabled(True)
+            except Exception:
+                self.placeholder.setText(f"Video: {p.name}")
+                self.stack_layout.setCurrentWidget(self.placeholder)
+                self.btn_play_pause.setEnabled(True)
         else:
-            # File might be a virtual fake in test
-            self.placeholder.setText(f"Video: {p.name} (Tệp giả lập kiểm thử)")
+            # File might be a virtual fake in test or running in headless mode
+            self.placeholder.setText(f"Video: {p.name}")
             self.stack_layout.setCurrentWidget(self.placeholder)
             self.btn_play_pause.setEnabled(True)
 

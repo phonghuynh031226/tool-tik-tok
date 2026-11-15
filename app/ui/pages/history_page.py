@@ -396,7 +396,12 @@ class HistoryPage(QWidget):
             channel = str(rec.get("channel_title") or rec.get("channel_id") or "Kênh mặc định")
 
             # Publish at
-            pub_at = rec.get("publish_at")
+            pub_at = rec.get("publish_at") or rec.get("scheduled_at")
+            if isinstance(pub_at, str):
+                try:
+                    pub_at = datetime.fromisoformat(pub_at)
+                except Exception:
+                    pub_at = None
             if isinstance(pub_at, datetime):
                 # Convert to machine local time
                 local_dt = pub_at.astimezone()

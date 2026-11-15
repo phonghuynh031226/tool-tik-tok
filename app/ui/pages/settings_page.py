@@ -272,7 +272,7 @@ class SettingsPage(QWidget):
         lbl_db.setProperty("class", "fieldLabel")
         st_layout.addWidget(lbl_db, 0, 0)
 
-        db_path = project_root() / "data" / "studio.db"
+        db_path = getattr(self.services.history, "path", None) or (project_root() / "data" / "app.db")
         self.lbl_db_path = QLabel(str(db_path))
         self.lbl_db_path.setStyleSheet("color: #cbd5e1; font-family: monospace;")
         st_layout.addWidget(self.lbl_db_path, 1, 0)

@@ -39,7 +39,7 @@ def test_shared_channel_updates_and_disconnect(qtbot):
     container.connection.set_channel(CHANNEL)
     assert CHANNEL.title in window.page_settings.lbl_yt_channel_name.text()
     assert CHANNEL.id in window.page_dashboard.lbl_channel_id.text()
-    assert CHANNEL.title in window.page_youtube.lbl_channel_name.text()
+    assert CHANNEL.title in window.page_dashboard.lbl_channel_title.text()
     window.page_settings._disconnect_youtube()
     assert container.connection.channel is None
     assert 'Chưa kết nối' in window.page_dashboard.lbl_channel_title.text()
@@ -58,13 +58,10 @@ def test_upload_requires_authenticated_channel_even_with_valid_content(qtbot, tm
     window.page_dashboard.radio_kids_no.click()
     window.page_dashboard.chk_rights.click()
     assert not window.page_dashboard.btn_upload.isEnabled()
-    assert not window.page_youtube.btn_upload.isEnabled()
     container.connection.set_channel(CHANNEL)
     assert window.page_dashboard.btn_upload.isEnabled()
-    assert window.page_youtube.btn_upload.isEnabled()
     container.connection.clear()
     assert not window.page_dashboard.btn_upload.isEnabled()
-    assert not window.page_youtube.btn_upload.isEnabled()
 
 
 def test_explicit_environment_flag_selects_fake(monkeypatch):
@@ -92,13 +89,14 @@ def test_settings_connect_uses_worker_and_publishes_channel(qtbot):
     container = ServiceContainer.create_fake()
     container.youtube = Mock(spec=YouTubeService)
     container.youtube.get_channel.return_value = CHANNEL
+    container.youtube.list_accounts.return_value = []
     window = MainWindow(container)
     qtbot.addWidget(window)
     window.page_settings._connect_youtube()
     qtbot.waitUntil(lambda: container.connection.channel is not None, timeout=3000)
     container.youtube.connect.assert_called_once()
     assert CHANNEL.title in window.page_settings.lbl_yt_channel_name.text()
-    assert CHANNEL.id in window.page_youtube.lbl_channel_id.text()
+    assert CHANNEL.id in window.page_dashboard.lbl_channel_id.text()
 
 
 @pytest.mark.parametrize('contents', ['{broken', '{"web": {}}'])

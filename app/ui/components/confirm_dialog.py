@@ -142,12 +142,19 @@ class UploadConfirmDialog(QDialog):
         self._add_row(info_layout, "Kênh đích:", f"{channel_title} ({channel_id})")
         self._add_row(info_layout, "Tiêu đề:", request.title)
 
-        privacy_vi = {
-            "private": "Riêng tư (Chỉ bạn xem được - Khuyên dùng)",
-            "unlisted": "Không công khai (Chỉ người có link mới xem)",
-            "public": "Công khai (Mọi người đều tìm thấy)",
-        }.get(request.privacy, request.privacy)
-        self._add_row(info_layout, "Chế độ hiển thị:", privacy_vi)
+        if request.publish_at is not None:
+            local_dt = request.publish_at.astimezone()
+            time_str = local_dt.strftime("%d/%m/%Y %H:%M")
+            self._add_row(info_layout, "Thời điểm xuất bản:", f"Hẹn công khai lúc {time_str} (giờ máy tính)")
+            self._add_row(info_layout, "Chế độ ban đầu:", "Riêng tư (YouTube tự động công khai khi đến giờ)")
+        else:
+            privacy_vi = {
+                "private": "Riêng tư (Chỉ bạn xem được - Khuyên dùng)",
+                "unlisted": "Không công khai (Chỉ người có link mới xem)",
+                "public": "Công khai (Mọi người đều tìm thấy)",
+            }.get(request.privacy, request.privacy)
+            self._add_row(info_layout, "Thời điểm xuất bản:", f"Đăng ngay, chế độ: {privacy_vi}")
+            self._add_row(info_layout, "Chế độ hiển thị:", privacy_vi)
 
         kids_vi = "Có (Dành cho trẻ em)" if request.made_for_kids else "Không (Không dành cho trẻ em)"
         self._add_row(info_layout, "Đối tượng người xem:", kids_vi)
@@ -161,11 +168,22 @@ class UploadConfirmDialog(QDialog):
             f"background-color: {tokens.DANGER_BG}; color: #fef08a; padding: 12px; font-weight: bold; "
             f"border: 1px solid {tokens.DANGER_BORDER}; border-radius: {tokens.RADIUS_MD}px;"
         )
-        if request.privacy in {'public', 'unlisted'}:
+        if request.privacy in {'public', 'unlisted'} and request.publish_at is None:
             self.lbl_privacy_warning.setText(
                 request.privacy.upper() + ': Video sẽ không còn ở chế độ Riêng tư. ' +
                 ('Mọi người có thể xem và tìm thấy video.' if request.privacy == 'public' else 'Bất kỳ ai có liên kết đều có thể xem và chia sẻ.')
             )
+            self.lbl_privacy_warning.show()
+        elif request.publish_at is not None:
+            local_dt = request.publish_at.astimezone()
+            self.lbl_privacy_warning.setText(
+                f"LÊN LỊCH PHÁT HÀNH: Video sẽ tải lên ở chế độ Riêng tư, sau đó YouTube sẽ tự động công khai vào lúc {local_dt.strftime('%d/%m/%Y %H:%M')} (giờ máy tính). Bạn không cần mở ứng dụng hay bật máy khi đến giờ hẹn."
+            )
+            self.lbl_privacy_warning.setStyleSheet(
+                f"background-color: {tokens.INFO_BG}; color: #bae6fd; padding: 12px; font-weight: bold; "
+                f"border: 1px solid {tokens.INFO_BORDER}; border-radius: {tokens.RADIUS_MD}px;"
+            )
+            self.lbl_privacy_warning.show()
         else:
             self.lbl_privacy_warning.hide()
         layout.addWidget(self.lbl_privacy_warning)

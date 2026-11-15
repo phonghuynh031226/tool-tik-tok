@@ -322,10 +322,20 @@ class YouTubeChannelsPage(QWidget):
             c.deleteLater()
         self._card_widgets.clear()
 
-        if not accounts:
-            empty = QLabel("Chưa có tài khoản YouTube nào được kết nối. Bấm 'Thêm tài khoản' để bắt đầu.")
-            empty.setProperty("class", "hintLabel")
+        try:
+            acc_list = list(accounts) if accounts else []
+        except (TypeError, ValueError):
+            acc_list = []
+
+        if not acc_list:
+            empty = EmptyState(
+                icon_name="youtube",
+                title="Chưa có tài khoản, hãy thêm tài khoản YouTube",
+                description="Hãy kết nối tài khoản để bắt đầu quản lý và đăng tải video.",
+                parent=self.card_accounts,
+            )
             self.accounts_container.addWidget(empty)
+            self._card_widgets.append(empty)
             self._selected_account = None
             self.stat_subscribers.set_value("—")
             self.stat_views.set_value("—")
@@ -334,10 +344,10 @@ class YouTubeChannelsPage(QWidget):
             return
 
         # Render account cards
-        default_acc = next((a for a in accounts if a.is_default), accounts[0])
+        default_acc = next((a for a in acc_list if getattr(a, "is_default", False)), acc_list[0])
         self._selected_account = default_acc
 
-        for acc in accounts:
+        for acc in acc_list:
             card = AccountCardWidget(acc, is_selected=(acc.id == default_acc.id), parent=self.card_accounts)
             card.mousePressEvent = lambda e, a=acc: self._select_account(a)
             self.accounts_container.addWidget(card)

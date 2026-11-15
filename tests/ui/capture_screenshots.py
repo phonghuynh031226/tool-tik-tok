@@ -2,6 +2,7 @@
 
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # Ensure project root is in sys.path
@@ -189,6 +190,51 @@ def capture_all_screenshots():
         captured_files.append(dlg_dry_path)
         print(f"Captured: {dlg_dry_path.name}")
         dialog_dry.close()
+
+        # Capture Step 4 specifically: Immediate mode
+        window.stack.setCurrentIndex(0)
+        window.page_dashboard.radio_publish_now.setChecked(True)
+        window.page_dashboard.scroll_area.ensureWidgetVisible(window.page_dashboard.step4_card)
+        app.processEvents()
+        step4_imm_pixmap = window.page_dashboard.step4_card.grab()
+        step4_imm_path = out_dir / f"step4_immediate_{res_name}.png"
+        step4_imm_pixmap.save(str(step4_imm_path), "PNG")
+        captured_files.append(step4_imm_path)
+        print(f"Captured: {step4_imm_path.name}")
+
+        # Capture Step 4 specifically: Scheduled mode
+        window.page_dashboard.radio_publish_schedule.setChecked(True)
+        sched_time = datetime.now() + timedelta(hours=2)
+        sched_time = sched_time.replace(minute=(sched_time.minute // 5) * 5, second=0, microsecond=0)
+        window.page_dashboard.dt_publish.setDateTime(sched_time)
+        window.page_dashboard.scroll_area.ensureWidgetVisible(window.page_dashboard.step4_card)
+        app.processEvents()
+        step4_sched_pixmap = window.page_dashboard.step4_card.grab()
+        step4_sched_path = out_dir / f"step4_scheduled_{res_name}.png"
+        step4_sched_pixmap.save(str(step4_sched_path), "PNG")
+        captured_files.append(step4_sched_path)
+        print(f"Captured: {step4_sched_path.name}")
+
+        # Capture Confirmation Dialog (Scheduled)
+        req_sched = UploadRequest(
+            path=Path(".tmp/downloads/demo.mp4"),
+            title=window.job_state.title,
+            description=window.job_state.description,
+            tags=window.job_state.tags,
+            privacy="private",
+            made_for_kids=False,
+            rights_confirmed=True,
+            publish_at=datetime.now(timezone.utc) + timedelta(hours=2),
+        )
+        dlg_sched = UploadConfirmDialog(req_sched, "Kênh mẫu DEV/TEST", "fake-channel-dev", window, dry_run=False)
+        dlg_sched.show()
+        app.processEvents()
+        dlg_sched_pixmap = dlg_sched.grab()
+        dlg_sched_path = out_dir / f"confirm_dialog_scheduled_{res_name}.png"
+        dlg_sched_pixmap.save(str(dlg_sched_path), "PNG")
+        captured_files.append(dlg_sched_path)
+        print(f"Captured: {dlg_sched_path.name}")
+        dlg_sched.close()
 
     print(f"\nAll {len(captured_files)} screenshots captured successfully in {out_dir}")
     return 0

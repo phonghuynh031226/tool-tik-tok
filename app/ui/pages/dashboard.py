@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import QThreadPool, QTimer, QUrl, Qt, Slot
 from PySide6.QtGui import QClipboard, QDesktopServices, QGuiApplication, QResizeEvent
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout,
+    QButtonGroup, QCheckBox, QComboBox, QDateTimeEdit, QFileDialog, QFrame, QGridLayout,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QProgressBar, QPushButton,
     QRadioButton, QScrollArea, QTextEdit, QVBoxLayout, QWidget,
 )
@@ -17,15 +18,15 @@ from app.contracts import DownloadResult, GeneratedContent, JobStatus, VideoMeta
 from app.services.gemini import select_preferred_model
 from app.ui import tokens
 from app.ui.components import (
-    AppButton, Card, ConfirmDialog, UploadConfirmDialog, VideoPlayerWidget,
+    AppButton, Card, ConfirmDialog, ToastManager, UploadConfirmDialog, VideoPlayerWidget,
     WorkflowStepper,
 )
 from app.ui.services import ServiceContainer
 from app.ui.state import JobState, format_hashtags
 from app.workers.service_workers import DryRunResult
 from app.workers import (
-    DownloadVideoWorker, FetchMetaWorker, GenerateContentWorker,
-    UploadYouTubeWorker,
+    AddAccountWorker, DownloadVideoWorker, FetchAccountsWorker, FetchMetaWorker,
+    GenerateContentWorker, UploadYouTubeWorker,
 )
 
 
@@ -324,6 +325,87 @@ class DashboardPage(QWidget):
         ch_layout.addWidget(self.btn_refresh_channel)
         s4_layout.addWidget(self.channel_box)
 
+        # Channel Selector ComboBox Row
+        ch_picker_row = QHBoxLayout()
+        self.lbl_choose_channel = QLabel("Chọn tài khoản kênh:", self.step4_card)
+        self.lbl_choose_channel.setProperty("class", "fieldLabel")
+        ch_picker_row.addWidget(self.lbl_choose_channel)
+
+        self.combo_channel = QComboBox(self.step4_card)
+        self.combo_channel.currentIndexChanged.connect(self._on_channel_combo_changed)
+        ch_picker_row.addWidget(self.combo_channel, stretch=1)
+
+        self.btn_reconnect_channel = AppButton("Đăng nhập lại", variant="danger", icon_name="refresh", parent=self.step4_card)
+        self.btn_reconnect_channel.setVisible(False)
+        self.btn_reconnect_channel.clicked.connect(self._on_reconnect_channel_clicked)
+        ch_picker_row.addWidget(self.btn_reconnect_channel)
+        s4_layout.addLayout(ch_picker_row)
+
+        # Timing Mode: Publish Now vs Scheduled
+        timing_row = QHBoxLayout()
+        lbl_timing = QLabel("Thời điểm xuất bản:", self.step4_card)
+        lbl_timing.setProperty("class", "fieldLabel")
+        timing_row.addWidget(lbl_timing)
+
+        self.radio_publish_now = QRadioButton("Đăng ngay", self.step4_card)
+        self.radio_publish_now.setChecked(True)
+        self.radio_publish_schedule = QRadioButton("Hẹn giờ công khai", self.step4_card)
+        self.timing_group = QButtonGroup(self.step4_card)
+        self.timing_group.addButton(self.radio_publish_now, 0)
+        self.timing_group.addButton(self.radio_publish_schedule, 1)
+        self.radio_publish_now.toggled.connect(self._on_timing_changed)
+        self.radio_publish_schedule.toggled.connect(self._on_timing_changed)
+
+        timing_row.addWidget(self.radio_publish_now)
+        timing_row.addWidget(self.radio_publish_schedule)
+        timing_row.addStretch()
+        s4_layout.addLayout(timing_row)
+
+        # Schedule Container (Hidden by default until 'Hẹn giờ công khai' is chosen)
+        self.schedule_container = QFrame(self.step4_card)
+        self.schedule_container.setStyleSheet(
+            "background-color: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 10px;"
+        )
+        self.schedule_container.setVisible(False)
+        sc_layout = QVBoxLayout(self.schedule_container)
+        sc_layout.setSpacing(8)
+
+        sc_top_row = QHBoxLayout()
+        lbl_dt = QLabel("Ngày & Giờ phát hành:", self.schedule_container)
+        lbl_dt.setStyleSheet("font-weight: 600; color: #f8fafc;")
+        sc_top_row.addWidget(lbl_dt)
+
+        self.dt_publish = QDateTimeEdit(self.schedule_container)
+        self.dt_publish.setCalendarPopup(True)
+        self.dt_publish.setDisplayFormat("dd/MM/yyyy HH:mm")
+        now_dt = datetime.now() + timedelta(hours=1)
+        now_dt = now_dt.replace(minute=(now_dt.minute // 5) * 5, second=0, microsecond=0)
+        self.dt_publish.setDateTime(now_dt)
+        self.dt_publish.dateTimeChanged.connect(self._on_schedule_datetime_changed)
+        sc_top_row.addWidget(self.dt_publish)
+
+        tz_str = datetime.now().astimezone().strftime("%z")
+        tz_formatted = f"GMT{tz_str[:3]}:{tz_str[3:]}" if len(tz_str) == 5 else "GMT+7"
+        self.lbl_timezone = QLabel(f"Múi giờ máy: {tz_formatted}", self.schedule_container)
+        self.lbl_timezone.setStyleSheet("color: #38bdf8; font-weight: 500; font-size: 12px;")
+        sc_top_row.addWidget(self.lbl_timezone)
+        sc_top_row.addStretch()
+        sc_layout.addLayout(sc_top_row)
+
+        self.lbl_schedule_error = QLabel(self.schedule_container)
+        self.lbl_schedule_error.setStyleSheet("color: #ef4444; font-size: 12px; font-weight: 600;")
+        self.lbl_schedule_error.setVisible(False)
+        sc_layout.addWidget(self.lbl_schedule_error)
+
+        self.lbl_schedule_note = QLabel(
+            "YouTube sẽ tự động công khai video đúng thời điểm hẹn, bạn không cần giữ ứng dụng chạy.",
+            self.schedule_container,
+        )
+        self.lbl_schedule_note.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        sc_layout.addWidget(self.lbl_schedule_note)
+
+        s4_layout.addWidget(self.schedule_container)
+
         # Settings Form: Privacy and Made for Kids
         form_grid = QGridLayout()
         form_grid.setSpacing(14)
@@ -340,6 +422,11 @@ class DashboardPage(QWidget):
         self.combo_privacy.setCurrentIndex(0)  # Default: Private
         self.combo_privacy.currentIndexChanged.connect(self._on_privacy_changed)
         form_grid.addWidget(self.combo_privacy, 1, 0)
+
+        self.lbl_privacy_hint = QLabel("Đã khóa ở chế độ Riêng tư cho đến giờ hẹn công khai.", self.step4_card)
+        self.lbl_privacy_hint.setStyleSheet("color: #38bdf8; font-size: 11px;")
+        self.lbl_privacy_hint.setVisible(False)
+        form_grid.addWidget(self.lbl_privacy_hint, 2, 0)
 
         # Made for Kids: KHÔNG CHỌN SẴN, BẮT BUỘC CHỌN
         lbl_kids = QLabel("Nội dung dành cho trẻ em? (Bắt buộc chọn):", self.step4_card)
@@ -875,18 +962,143 @@ class DashboardPage(QWidget):
     @Slot()
     def _refresh_channel_info(self) -> None:
         channel = self.services.connection.channel
-        self.lbl_channel_title.setText(f"Kênh YouTube: {channel.title}" if channel else "Kênh YouTube: Chưa kết nối")
-        self.lbl_channel_id.setText(f"ID kênh: {channel.id}" if channel else "ID kênh: -")
         checking = self.services.connection.busy and self.services.connection._upload_owner is None
         authenticated = channel is not None and not self.services.is_fake
         state = 'checking' if checking else ('connected' if authenticated else 'disconnected')
         self.lbl_channel_indicator.setProperty('connectionState', state)
         color = {'checking': '#facc15', 'connected': '#22c55e', 'disconnected': '#ef4444'}[state]
         self.lbl_channel_indicator.setStyleSheet(f'font-size:20px;color:{color};')
+
+        # Populate accounts combo
+        accounts = []
+        if hasattr(self.services.youtube, "list_accounts"):
+            try:
+                raw_accounts = self.services.youtube.list_accounts()
+                if isinstance(raw_accounts, (list, tuple)):
+                    accounts = list(raw_accounts)
+            except Exception:
+                accounts = []
+
+        if channel:
+            if not any(getattr(a, "id", None) == channel.id for a in accounts):
+                from app.contracts import ChannelAccount
+                accounts.insert(0, ChannelAccount(channel.id, channel.title, is_default=True, status="connected"))
+
+        self.combo_channel.blockSignals(True)
+        self.combo_channel.clear()
+
+        if channel:
+            self.lbl_channel_title.setText(f"Kênh YouTube: {channel.title}")
+            self.lbl_channel_id.setText(f"ID kênh: {channel.id}")
+            self.state.channel_id = channel.id
+            self.btn_reconnect_channel.setVisible(False)
+
+            default_acc = next((a for a in accounts if getattr(a, "id", None) == channel.id), accounts[0] if accounts else None)
+            for acc in accounts:
+                is_expired = getattr(acc, "status", "") == "expired"
+                suffix = " (Hết hạn)" if is_expired else (" (Mặc định)" if getattr(acc, "is_default", False) else "")
+                self.combo_channel.addItem(f"{acc.title}{suffix}", acc)
+
+            if default_acc:
+                def_idx = 0
+                for i in range(self.combo_channel.count()):
+                    d = self.combo_channel.itemData(i)
+                    if d and getattr(d, "id", None) == default_acc.id:
+                        def_idx = i
+                        break
+                self.combo_channel.setCurrentIndex(def_idx)
+        else:
+            self.lbl_channel_title.setText("Kênh YouTube: Chưa kết nối")
+            self.lbl_channel_id.setText("ID kênh: -")
+            self.state.channel_id = None
+            self.btn_reconnect_channel.setVisible(False)
+
+            if accounts:
+                for acc in accounts:
+                    is_expired = getattr(acc, "status", "") == "expired"
+                    suffix = " (Hết hạn)" if is_expired else (" (Mặc định)" if getattr(acc, "is_default", False) else "")
+                    self.combo_channel.addItem(f"{acc.title}{suffix}", acc)
+                self.combo_channel.setCurrentIndex(0)
+            else:
+                self.combo_channel.addItem("Chưa có tài khoản kết nối", None)
+                self.combo_channel.setCurrentIndex(0)
+
+        self.combo_channel.blockSignals(False)
         self._update_upload_button_state()
         self._update_stepper_state()
 
+    @Slot(int)
+    def _on_channel_combo_changed(self, index: int) -> None:
+        acc = self.combo_channel.itemData(index)
+        if acc:
+            self.lbl_channel_title.setText(f"Kênh YouTube: {acc.title}")
+            self.lbl_channel_id.setText(f"ID kênh: {acc.id}")
+            self.state.channel_id = acc.id
+            is_expired = getattr(acc, "status", "") == "expired"
+            self.btn_reconnect_channel.setVisible(is_expired)
+        else:
+            self.state.channel_id = None
+            self.btn_reconnect_channel.setVisible(False)
+        self._update_upload_button_state()
 
+    @Slot()
+    def _on_reconnect_channel_clicked(self) -> None:
+        if hasattr(self.services.youtube, "add_account"):
+            worker = AddAccountWorker(self.services.youtube)
+            worker.signals.finished.connect(lambda acc: (self._refresh_channel_info(), ToastManager.instance().success("Kết nối lại thành công!", f"Đã kết nối lại kênh {acc.title}.")))
+            worker.signals.error.connect(lambda err: ToastManager.instance().error("Kết nối thất bại", err))
+            self.thread_pool.start(worker)
+        else:
+            ToastManager.instance().info("Kết nối lại kênh", "Vui lòng vào trang Kênh YouTube hoặc Cài đặt để kết nối lại tài khoản.")
+
+    @Slot(bool)
+    def _on_timing_changed(self, _checked: bool) -> None:
+        is_scheduled = self.radio_publish_schedule.isChecked()
+        self.schedule_container.setVisible(is_scheduled)
+        self.lbl_privacy_hint.setVisible(is_scheduled)
+        if is_scheduled:
+            self.combo_privacy.setCurrentIndex(0)  # Locked to Private
+            self.combo_privacy.setEnabled(False)
+            self.state.privacy = "private"
+        else:
+            self.combo_privacy.setEnabled(True)
+            self.state.publish_at = None
+        self._validate_schedule_time()
+        self._update_upload_button_state()
+
+    @Slot()
+    def _on_schedule_datetime_changed(self) -> None:
+        self._validate_schedule_time()
+        self._update_upload_button_state()
+
+    def _validate_schedule_time(self) -> tuple[bool, str]:
+        if not hasattr(self, "radio_publish_schedule") or not self.radio_publish_schedule.isChecked():
+            if hasattr(self, "lbl_schedule_error"):
+                self.lbl_schedule_error.setVisible(False)
+            return True, ""
+
+        qdt = self.dt_publish.dateTime()
+        local_py = qdt.toPython()
+        local_aware = local_py.astimezone()
+        utc_dt = local_aware.astimezone(timezone.utc)
+        now_utc = datetime.now(timezone.utc)
+
+        min_allowed = now_utc + timedelta(minutes=10)
+        max_allowed = now_utc + timedelta(days=365)
+
+        if utc_dt < min_allowed:
+            err = "Thời gian hẹn phải từ 10 phút trở lên kể từ thời điểm hiện tại."
+            self.lbl_schedule_error.setText(err)
+            self.lbl_schedule_error.setVisible(True)
+            return False, err
+        elif utc_dt > max_allowed:
+            err = "Thời gian hẹn tối đa không quá 365 ngày kể từ thời điểm hiện tại."
+            self.lbl_schedule_error.setText(err)
+            self.lbl_schedule_error.setVisible(True)
+            return False, err
+
+        self.lbl_schedule_error.setVisible(False)
+        return True, ""
 
     @Slot(int)
     def _on_privacy_changed(self, index: int) -> None:
@@ -905,23 +1117,17 @@ class DashboardPage(QWidget):
         self._update_upload_button_state()
         self._update_stepper_state()
 
-
-
     @Slot(bool)
     def _on_rights_changed(self, checked: bool) -> None:
         self.state.rights_confirmed = checked
         self._update_upload_button_state()
         self._update_stepper_state()
 
-
-
     @Slot(bool)
     def _on_dry_run_toggled(self, checked: bool) -> None:
         self.state.dry_run = checked
         self._update_upload_button_state()
         self._update_stepper_state()
-
-
 
     def _update_upload_button_state(self) -> None:
         """Lock upload button when prerequisites are unmet."""
@@ -930,11 +1136,31 @@ class DashboardPage(QWidget):
         kids_ok = self.radio_kids_yes.isChecked() or self.radio_kids_no.isChecked()
         rights_ok = self.chk_rights.isChecked()
         has_video = bool(self.state.local_video_path)
-        can_click = title_ok and kids_ok and rights_ok and has_video and self.services.upload_enabled(self.state.dry_run) and self.state.can_upload()[0]
+        valid_sched, _ = self._validate_schedule_time()
+
+        # Channel validity
+        sel_acc = self.combo_channel.itemData(self.combo_channel.currentIndex()) if hasattr(self, "combo_channel") else None
+        is_expired = getattr(sel_acc, "status", "") == "expired" if sel_acc else False
+        has_channel = (sel_acc is not None or self.services.connection.channel is not None or self.state.dry_run)
+
+        can_click = (
+            title_ok
+            and kids_ok
+            and rights_ok
+            and has_video
+            and valid_sched
+            and not is_expired
+            and has_channel
+            and self.services.upload_enabled(self.state.dry_run)
+            and self.state.can_upload()[0]
+        )
         self.btn_upload.setEnabled(can_click)
         if self.state.dry_run:
             self.btn_upload.setText("Chạy thử đăng YouTube (Dry-run)")
             self.btn_upload.set_icon_name("flask")
+        elif hasattr(self, "radio_publish_schedule") and self.radio_publish_schedule.isChecked():
+            self.btn_upload.setText("Lên lịch đăng YouTube")
+            self.btn_upload.set_icon_name("calendar-clock")
         else:
             self.btn_upload.setText("Tải lên YouTube")
             self.btn_upload.set_icon_name("upload")
@@ -948,19 +1174,41 @@ class DashboardPage(QWidget):
             QMessageBox.warning(self, "Chưa đủ điều kiện đăng", reason)
             return
 
+        is_scheduled = self.radio_publish_schedule.isChecked()
+        if is_scheduled:
+            valid_sched, err_msg = self._validate_schedule_time()
+            if not valid_sched:
+                QMessageBox.warning(self, "Thời gian hẹn không hợp lệ", err_msg)
+                return
+            local_aware = self.dt_publish.dateTime().toPython().astimezone()
+            self.state.publish_at = local_aware.astimezone(timezone.utc)
+            self.state.privacy = "private"
+        else:
+            self.state.publish_at = None
+
+        sel_acc = self.combo_channel.itemData(self.combo_channel.currentIndex()) if hasattr(self, "combo_channel") else None
+        if sel_acc and hasattr(sel_acc, "id"):
+            self.state.channel_id = sel_acc.id
+
         try:
             req = self.state.build_upload_request()
             channel = self.services.connection.channel
-            if channel is None:
-                from app.contracts import ChannelInfo
-                channel = ChannelInfo("dry-run-channel", "Chạy thử — không đăng video")
+            if sel_acc and hasattr(sel_acc, "title"):
+                channel_title = sel_acc.title
+                channel_id = sel_acc.id
+            elif channel:
+                channel_title = channel.title
+                channel_id = channel.id
+            else:
+                channel_title = "dry-run-channel"
+                channel_id = "Chạy thử — không đăng video"
         except Exception as exc:
             QMessageBox.critical(self, "Lỗi kiểm tra", str(exc))
             return
 
         # Explicit confirmation dialog per requirement
         dialog = UploadConfirmDialog(
-            req, channel.title, channel.id, self, dry_run=self.state.dry_run
+            req, channel_title, channel_id, self, dry_run=self.state.dry_run
         )
         if dialog.exec() != UploadConfirmDialog.DialogCode.Accepted:
             return  # Cancelled by user in dialog
@@ -973,7 +1221,13 @@ class DashboardPage(QWidget):
         self.progress_upload.setVisible(True)
         self.progress_upload.setValue(10)
 
-        worker = UploadYouTubeWorker(self.services.youtube, req, dry_run=self.state.dry_run, confirmed_channel_id=channel.id, confirmed_channel_title=channel.title)
+        worker = UploadYouTubeWorker(
+            self.services.youtube,
+            req,
+            dry_run=self.state.dry_run,
+            confirmed_channel_id=channel_id,
+            confirmed_channel_title=channel_title,
+        )
         self._active_upload_worker = worker
         worker.signals.progress.connect(lambda p: self.progress_upload.setValue(int(p * 100)))
         worker.signals.finished.connect(self._on_upload_finished)
@@ -991,25 +1245,58 @@ class DashboardPage(QWidget):
         self._update_upload_button_state()
         self._update_stepper_state()
 
-
         self.btn_cancel_upload.setVisible(False)
         self._active_upload_worker = None
-        if isinstance(result, DryRunResult):
+
+        is_dry_run = isinstance(result, DryRunResult)
+        if is_dry_run:
             self.state.set_dry_run_result(result)
+            self._on_upload_result(result)
+            ToastManager.instance().info("Chạy thử hoàn tất!", "Đã chạy thử quy trình thành công (không upload thật).")
             return
+
+        is_scheduled = getattr(result, "status", None) == JobStatus.SCHEDULED or self.state.publish_at is not None
+
         self.state.set_upload_result(result)
+        self._on_upload_result(result)
+
+        if is_scheduled:
+            local_time_str = self.dt_publish.dateTime().toString("dd/MM/yyyy HH:mm")
+            ToastManager.instance().success(
+                "Đã lên lịch thành công!",
+                f"Đã lên lịch video thành công! YouTube sẽ tự động công khai vào {local_time_str}."
+            )
+        else:
+            ToastManager.instance().success("Tải lên thành công!", "Đăng video lên YouTube thành công!")
 
         # Save to history repository
         try:
+            meta = self.state.meta
+            download = self.state.download_result
+            sel_acc = self.combo_channel.itemData(self.combo_channel.currentIndex()) if hasattr(self, "combo_channel") else None
+            ch_id = getattr(result, "channel_id", "") or (sel_acc.id if sel_acc else "") or (self.services.connection.channel.id if self.services.connection.channel else "")
+            job_status = JobStatus.SCHEDULED if is_scheduled else JobStatus.UPLOADED
+
             self.services.history.add({
-                "video_id": result.video_id,
-                "url": result.url,
-                "title": self.state.title,
-                "status": self.state.status,
-                "privacy": self.state.privacy,
+                "video_id": meta.video_id if meta else getattr(result, "video_id", ""),
+                "url": meta.url if meta else "",
+                "title": meta.title if meta else self.state.title,
+                "youtube_title": self.state.title,
+                "youtube_description": self.state.description,
+                "youtube_video_id": getattr(result, "video_id", ""),
+                "youtube_url": getattr(result, "url", ""),
+                "youtube_channel_id": ch_id,
+                "channel_id": ch_id,
+                "local_mp4_path": str(self.state.local_video_path) if self.state.local_video_path else "",
+                "sha256": download.sha256 if download else "",
+                "status": job_status,
+                "privacy_status": "private" if is_scheduled else self.state.privacy,
+                "rights_confirmed": self.state.rights_confirmed,
+                "publish_at": self.state.publish_at,
+                "scheduled_at": self.state.publish_at.isoformat() if self.state.publish_at else None,
             })
         except Exception:
-            pass
+            QMessageBox.warning(self, "Lịch sử", "Video đã đăng nhưng không lưu được lịch sử.")
 
     @Slot()
     def _on_cancel_upload(self) -> None:
@@ -1021,7 +1308,6 @@ class DashboardPage(QWidget):
         self.services.connection.end_upload(self)
         self._update_upload_button_state()
         self._update_stepper_state()
-
 
         self.btn_cancel_upload.setVisible(False)
         self.progress_upload.setVisible(False)
@@ -1035,13 +1321,44 @@ class DashboardPage(QWidget):
         self.upload_result_box.setVisible(visible)
         if not visible:
             return
-        self.lbl_upload_status.setText("Chạy thử hoàn tất, chưa đăng YouTube" if simulated else "Đã đăng thành công lên YouTube!")
-        self.lbl_upload_summary.setText(result.summary if simulated else "")
-        self.lbl_upload_summary.setVisible(simulated)
-        self.lbl_upload_url.setText("" if simulated else f"Liên kết: {result.url}")
-        self.lbl_upload_url.setVisible(not simulated)
-        self.btn_open_youtube.setVisible(not simulated)
-        self.btn_copy_link.setVisible(not simulated)
+
+        is_scheduled = not simulated and (getattr(result, "status", None) == JobStatus.SCHEDULED or self.state.publish_at is not None)
+
+        if simulated:
+            self.lbl_upload_status.setText("Chạy thử hoàn tất, chưa đăng YouTube")
+            self.lbl_upload_summary.setText(result.summary if hasattr(result, "summary") else "")
+            self.lbl_upload_summary.setVisible(True)
+            self.lbl_upload_url.setVisible(False)
+            self.btn_open_youtube.setVisible(False)
+            self.btn_copy_link.setVisible(False)
+        elif is_scheduled:
+            local_time_str = self.dt_publish.dateTime().toString("dd/MM/yyyy HH:mm")
+            self.lbl_upload_status.setText(f"Đã lên lịch phát hành ({local_time_str})")
+            self.lbl_upload_summary.setText(f"Video đã tải lên ở chế độ Riêng tư. YouTube sẽ tự động công khai vào lúc {local_time_str} (giờ máy tính).")
+            self.lbl_upload_summary.setVisible(True)
+            self.lbl_upload_url.setText(f"Liên kết quản lý: {result.url}")
+            self.lbl_upload_url.setVisible(True)
+            self.btn_open_youtube.setVisible(True)
+            self.btn_copy_link.setVisible(True)
+
+    @Slot()
+    def _on_open_youtube_clicked(self) -> None:
+        if self.state.upload_result and self.state.upload_result.url:
+            QDesktopServices.openUrl(QUrl(self.state.upload_result.url))
+
+    @Slot()
+    def _on_copy_link_clicked(self) -> None:
+        if self.state.upload_result and self.state.upload_result.url:
+            clip = QGuiApplication.clipboard()
+            clip.setText(self.state.upload_result.url)
+            self._notify("info", "Đã sao chép", "Đã sao chép liên kết video YouTube.")
+        else:
+            self.lbl_upload_status.setText("Đã đăng thành công lên YouTube!")
+            self.lbl_upload_summary.setVisible(False)
+            self.lbl_upload_url.setText(f"Liên kết: {result.url}")
+            self.lbl_upload_url.setVisible(True)
+            self.btn_open_youtube.setVisible(True)
+            self.btn_copy_link.setVisible(True)
 
     @Slot()
     def _on_open_youtube_clicked(self) -> None:

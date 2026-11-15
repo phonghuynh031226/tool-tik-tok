@@ -30,7 +30,7 @@ class StepItemWidget(QFrame):
         super().__init__(parent)
         self.step_number = step_number
         self.title_text = title
-        self._state: StepState = "pending"
+        self._state: Optional[StepState] = None
 
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._init_ui()
@@ -43,6 +43,7 @@ class StepItemWidget(QFrame):
 
         # Circular indicator button/label
         self.lbl_circle = QLabel(str(self.step_number), self)
+        self.lbl_circle.setObjectName("stepCircle")
         self.lbl_circle.setFixedSize(32, 32)
         self.lbl_circle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.lbl_circle)
@@ -53,63 +54,103 @@ class StepItemWidget(QFrame):
         info_layout.setContentsMargins(0, 0, 0, 0)
 
         self.lbl_title = QLabel(self.title_text, self)
-        self.lbl_title.setStyleSheet("font-size: 13px; font-weight: 600;")
+        self.lbl_title.setObjectName("stepTitle")
         info_layout.addWidget(self.lbl_title)
 
         self.lbl_status = QLabel("Chưa làm", self)
-        self.lbl_status.setStyleSheet("font-size: 11px;")
+        self.lbl_status.setObjectName("stepStatus")
         info_layout.addWidget(self.lbl_status)
 
         layout.addLayout(info_layout)
+
+        self.setStyleSheet(f"""
+            QFrame {{
+                background-color: {tokens.BG_CARD};
+                border: 1px solid {tokens.BORDER_SUBTLE};
+                border-radius: 8px;
+            }}
+            QFrame:hover {{
+                border-color: {tokens.BORDER_DEFAULT};
+            }}
+            QFrame[stepState="active"] {{
+                background-color: rgba(56, 189, 248, 0.12);
+                border: 1.5px solid {tokens.COLOR_PRIMARY};
+            }}
+            QFrame[stepState="done"] {{
+                background-color: rgba(34, 197, 94, 0.08);
+                border: 1px solid rgba(34, 197, 94, 0.3);
+            }}
+            QLabel#stepCircle {{
+                background-color: {tokens.BG_APP};
+                color: {tokens.TEXT_MUTED};
+                border: 1px solid {tokens.BORDER_SUBTLE};
+                border-radius: 16px;
+                font-size: 12px;
+                font-weight: bold;
+            }}
+            QFrame[stepState="active"] QLabel#stepCircle {{
+                background-color: {tokens.COLOR_PRIMARY};
+                color: #ffffff;
+                border: none;
+                font-size: 13px;
+            }}
+            QFrame[stepState="done"] QLabel#stepCircle {{
+                background-color: {tokens.COLOR_SUCCESS};
+                color: #ffffff;
+                border: none;
+                font-size: 14px;
+            }}
+            QLabel#stepTitle {{
+                color: {tokens.TEXT_MUTED};
+                font-size: 13px;
+                font-weight: 500;
+            }}
+            QFrame[stepState="active"] QLabel#stepTitle {{
+                color: {tokens.COLOR_PRIMARY};
+                font-weight: 700;
+            }}
+            QFrame[stepState="done"] QLabel#stepTitle {{
+                color: {tokens.TEXT_PRIMARY};
+                font-weight: 600;
+            }}
+            QLabel#stepStatus {{
+                color: {tokens.TEXT_MUTED};
+                font-size: 11px;
+            }}
+            QFrame[stepState="active"] QLabel#stepStatus {{
+                color: {tokens.COLOR_PRIMARY};
+                font-weight: 600;
+            }}
+            QFrame[stepState="done"] QLabel#stepStatus {{
+                color: {tokens.COLOR_SUCCESS};
+                font-weight: 500;
+            }}
+        """)
 
     def mousePressEvent(self, event) -> None:
         super().mousePressEvent(event)
         self.clicked.emit(self.step_number)
 
     def set_state(self, state: StepState) -> None:
+        if self._state == state:
+            return
         self._state = state
+        self.setProperty("stepState", state)
         if state == "done":
             self.lbl_circle.setText("✓")
-            self.lbl_circle.setStyleSheet(
-                f"background-color: {tokens.COLOR_SUCCESS}; color: #ffffff; "
-                f"border-radius: 16px; font-weight: bold; font-size: 14px;"
-            )
-            self.lbl_title.setStyleSheet(f"color: {tokens.TEXT_PRIMARY}; font-size: 13px; font-weight: 600;")
             self.lbl_status.setText("Hoàn thành")
-            self.lbl_status.setStyleSheet(f"color: {tokens.COLOR_SUCCESS}; font-size: 11px; font-weight: 500;")
-            self.setStyleSheet(
-                f"QFrame {{ background-color: rgba(34, 197, 94, 0.08); "
-                f"border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 8px; }}"
-                f"QFrame:hover {{ background-color: rgba(34, 197, 94, 0.14); }}"
-            )
         elif state == "active":
             self.lbl_circle.setText(str(self.step_number))
-            self.lbl_circle.setStyleSheet(
-                f"background-color: {tokens.COLOR_PRIMARY}; color: #ffffff; "
-                f"border-radius: 16px; font-weight: bold; font-size: 13px;"
-            )
-            self.lbl_title.setStyleSheet(f"color: {tokens.COLOR_PRIMARY}; font-size: 13px; font-weight: 700;")
             self.lbl_status.setText("Đang làm")
-            self.lbl_status.setStyleSheet(f"color: {tokens.COLOR_PRIMARY}; font-size: 11px; font-weight: 600;")
-            self.setStyleSheet(
-                f"QFrame {{ background-color: rgba(56, 189, 248, 0.12); "
-                f"border: 1.5px solid {tokens.COLOR_PRIMARY}; border-radius: 8px; }}"
-                f"QFrame:hover {{ background-color: rgba(56, 189, 248, 0.18); }}"
-            )
-        else:  # pending
+        else:
             self.lbl_circle.setText(str(self.step_number))
-            self.lbl_circle.setStyleSheet(
-                f"background-color: {tokens.BG_APP}; color: {tokens.TEXT_MUTED}; "
-                f"border: 1px solid {tokens.BORDER_SUBTLE}; border-radius: 16px; font-size: 12px;"
-            )
-            self.lbl_title.setStyleSheet(f"color: {tokens.TEXT_MUTED}; font-size: 13px; font-weight: 500;")
             self.lbl_status.setText("Chưa làm")
-            self.lbl_status.setStyleSheet(f"color: {tokens.TEXT_MUTED}; font-size: 11px;")
-            self.setStyleSheet(
-                f"QFrame {{ background-color: {tokens.BG_CARD}; "
-                f"border: 1px solid {tokens.BORDER_SUBTLE}; border-radius: 8px; }}"
-                f"QFrame:hover {{ border-color: {tokens.BORDER_DEFAULT}; }}"
-            )
+
+        self.style().unpolish(self)
+        self.style().polish(self)
+        for child in (self.lbl_circle, self.lbl_title, self.lbl_status):
+            child.style().unpolish(child)
+            child.style().polish(child)
 
 
 class WorkflowStepper(QFrame):

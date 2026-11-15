@@ -22,7 +22,7 @@ from app.contracts import (
     ChannelAccount, ChannelStats, GeneratedContent, JobStatus,
     UploadRequest, VideoMeta, VideoStats,
 )
-from app.ui.components import WorkflowStepper
+from app.ui.components import UploadConfirmDialog, WorkflowStepper
 from app.ui.main_window import MainWindow
 from app.ui.pages.dashboard import DashboardPage
 from app.ui.pages.history_page import HistoryPage
@@ -230,3 +230,189 @@ def test_settings_simplified_oauth(qtbot, test_container):
     # Ensure client_secret.json picker exists
     assert settings.edit_client_secret is not None
     assert settings.btn_browse_secret is not None
+
+
+def test_overview_channel_picker_selection_and_expired(qtbot, test_container):
+    """Test destination channel picker populates accounts and handles expired accounts."""
+    expired_acc = ChannelAccount("ch-expired", "Kênh Hết Hạn", is_default=False, status="expired")
+    valid_acc = ChannelAccount("ch-valid", "Kênh Hợp Lệ", is_default=True, status="connected")
+
+    test_container.youtube.list_accounts = Mock(return_value=[valid_acc, expired_acc])
+
+    window = MainWindow(services=test_container)
+    qtbot.addWidget(window)
+    page = window.page_dashboard
+
+    # Check that combo has both accounts
+    assert page.combo_channel.count() == 2
+    assert "Kênh Hợp Lệ (Mặc định)" in page.combo_channel.itemText(0)
+    assert "Kênh Hết Hạn (Hết hạn)" in page.combo_channel.itemText(1)
+
+    # Default is selected
+    assert page.combo_channel.currentIndex() == 0
+    assert page.btn_reconnect_channel.isHidden()
+
+    # Selecting expired account reveals reconnect button
+    page.combo_channel.setCurrentIndex(1)
+    assert not page.btn_reconnect_channel.isHidden()
+
+
+def test_overview_publish_timing_schedule_mode_and_validation(qtbot, test_container, tmp_path):
+    """Test publish timing toggle, QDateTimeEdit initialization, timezone and validation."""
+    window = MainWindow(services=test_container)
+    qtbot.addWidget(window)
+    page = window.page_dashboard
+
+    # Default is "Đăng ngay"
+    assert page.radio_publish_now.isChecked()
+    assert page.schedule_container.isHidden()
+    assert page.combo_privacy.isEnabled()
+
+    # Switch to "Hẹn giờ công khai"
+    page.radio_publish_schedule.setChecked(True)
+    assert not page.schedule_container.isHidden()
+    assert not page.combo_privacy.isEnabled()
+    assert page.combo_privacy.currentIndex() == 0  # Locked to private
+    assert not page.lbl_privacy_hint.isHidden()
+
+    # Timezone label is present
+    assert "Múi giờ máy:" in page.lbl_timezone.text()
+
+    # Default datetime is in the future
+    dt_now = datetime.now()
+    qdt_selected = page.dt_publish.dateTime().toPython()
+    assert qdt_selected > dt_now
+
+    # Test Validation: set time in past / less than 10 mins -> invalid
+    page.dt_publish.setDateTime(datetime.now() + timedelta(minutes=5))
+    valid, err = page._validate_schedule_time()
+    assert not valid
+    assert "10 phút" in err
+    assert not page.lbl_schedule_error.isHidden()
+
+    # Test Validation: set time 2 hours in future -> valid
+    page.dt_publish.setDateTime(datetime.now() + timedelta(hours=2))
+    valid, err = page._validate_schedule_time()
+    assert valid
+    assert page.lbl_schedule_error.isHidden()
+
+    # Switch back to "Đăng ngay" -> schedule container hidden, privacy unlocked
+    page.radio_publish_now.setChecked(True)
+    assert page.schedule_container.isHidden()
+    assert page.combo_privacy.isEnabled()
+
+
+def test_overview_upload_confirm_dialog_modes(qtbot, tmp_path):
+    """Test UploadConfirmDialog displays correct info in immediate and scheduled modes."""
+    video = tmp_path / "test.mp4"
+    video.write_bytes(b"dummy")
+
+    # Immediate mode dialog
+    req_now = UploadRequest(
+        path=video,
+        title="Video Test Đăng Ngay",
+        description="Mô tả",
+        tags=["test"],
+        privacy="public",
+        made_for_kids=False,
+        rights_confirmed=True,
+    )
+    dlg_now = UploadConfirmDialog(req_now, "Kênh Chính", "UC123")
+    qtbot.addWidget(dlg_now)
+    assert not dlg_now.lbl_privacy_warning.isHidden()
+    assert "PUBLIC" in dlg_now.lbl_privacy_warning.text()
+
+    # Scheduled mode dialog
+    future_time = datetime.now(timezone.utc) + timedelta(days=2)
+    req_sched = UploadRequest(
+        path=video,
+        title="Video Test Hẹn Giờ",
+        description="Mô tả",
+        tags=["test"],
+        privacy="private",
+        made_for_kids=False,
+        rights_confirmed=True,
+        publish_at=future_time,
+    )
+    dlg_sched = UploadConfirmDialog(req_sched, "Kênh Chính", "UC123")
+    qtbot.addWidget(dlg_sched)
+    assert not dlg_sched.lbl_privacy_warning.isHidden()
+    assert "LÊN LỊCH PHÁT HÀNH" in dlg_sched.lbl_privacy_warning.text()
+
+
+def test_overview_scheduled_upload_flow_and_history_sync(qtbot, test_container, tmp_path):
+    """Test that scheduled upload records properly and appears in Scheduled tab."""
+    from app.contracts import ChannelInfo, UploadResult
+    from app.services.youtube.service import YouTubeService
+
+    # Configure authenticated non-fake channel
+    test_container.youtube = Mock(spec=YouTubeService)
+    test_container.youtube.list_accounts.return_value = []
+    test_container.connection.set_channel(ChannelInfo("UC" + "b" * 22, "Kênh Hẹn Giờ"))
+
+    window = MainWindow(services=test_container)
+    qtbot.addWidget(window)
+    page = window.page_dashboard
+
+    video = tmp_path / "scheduled_clip.mp4"
+    video.write_bytes(b"sample mp4")
+    window.job_state.set_local_file(video)
+
+    page.edit_title.setText("Video Lên Lịch Tự Động Test")
+    page.radio_kids_no.click()
+    page.chk_rights.setChecked(True)
+
+    # Set to scheduled mode + 2 hours
+    page.radio_publish_schedule.setChecked(True)
+    sched_dt = datetime.now() + timedelta(hours=2)
+    page.dt_publish.setDateTime(sched_dt)
+
+    assert page.btn_upload.isEnabled()
+    assert page.btn_upload.text() == "Lên lịch đăng YouTube"
+
+    # Simulate upload finished callback
+    result = UploadResult(
+        video_id="v" * 11,
+        url="https://www.youtube.com/watch?v=" + "v" * 11,
+        channel_id="UC" + "b" * 22,
+        status=JobStatus.SCHEDULED,
+    )
+    page._on_upload_finished(result)
+
+    # Check status message
+    assert "Đã lên lịch phát hành" in page.lbl_upload_status.text()
+    assert "đã công khai" not in page.lbl_upload_status.text()
+
+    # Verify record in scheduled list
+    scheduled_items = test_container.history.list_scheduled()
+    assert len(scheduled_items) >= 1
+    assert any(r.get("youtube_video_id") == "v" * 11 for r in scheduled_items)
+
+    # Switch to History page and check Scheduled tab
+    window.btn_nav_history.click()
+    window.page_history.tab_widget.setCurrentIndex(1)
+    window.page_history.refresh_scheduled()
+    assert window.page_history.tbl_scheduled.rowCount() >= 1
+
+
+def test_settings_real_db_path_displayed(qtbot, test_container):
+    """Test that Settings page displays real app.db path and not hardcoded studio.db."""
+    window = MainWindow(services=test_container)
+    qtbot.addWidget(window)
+
+    db_text = window.page_settings.lbl_db_path.text()
+    assert "studio.db" not in db_text
+    assert "app.db" in db_text
+
+
+def test_youtube_channels_page_empty_state_handling(qtbot, test_container):
+    """Test YouTubeChannelsPage correctly shows EmptyState without crash when accounts is empty."""
+    test_container.youtube.list_accounts = Mock(return_value=[])
+
+    window = MainWindow(services=test_container)
+    qtbot.addWidget(window)
+    yt_page = window.page_youtube_channels
+
+    yt_page._on_accounts_loaded([])
+    assert yt_page._selected_account is None
+    assert yt_page.stat_subscribers.lbl_value.text() == "—"
