@@ -86,7 +86,7 @@ def test_v2_defaults_preserve_legacy_session_identity(setup_service):
     assert instance.list_accounts()[0].id == CHANNEL
 
 
-def test_real_v2_request_fails_closed_before_upload(setup_service):
+def test_unconfirmed_channel_and_schedule_edits_fail_before_upload(setup_service):
     from datetime import datetime, timedelta, timezone
     from app.errors import AccountNotFound
     instance, req, _, api, _, _ = setup_service
@@ -147,7 +147,8 @@ def test_token_refresh_once_after_401(setup_service):
     request.next_chunk.side_effect = [http_error(401, 'authError'), (None, {'id': VIDEO})]
     assert instance.upload(req, lambda value: None, CancelToken()).video_id == VIDEO
     credentials.refresh.assert_called_once()
-    assert auth.TOKEN_KEY in secrets.values
+    assert auth.account_token_key(CHANNEL) in secrets.values
+    assert auth.TOKEN_KEY not in secrets.values
 
 
 def test_repeated_401_stops_after_one_refresh(setup_service):
@@ -169,10 +170,10 @@ def test_dns_error_retried_without_recreating_upload(setup_service):
 def test_failed_refresh_requires_reconnect_and_clears_bad_token(setup_service):
     instance, req, request, _, secrets, credentials = setup_service
     credentials.refresh.side_effect = RuntimeError('dummy private refresh diagnostic')
-    secrets.set(auth.TOKEN_KEY, 'dummy-expired')
+    secrets.set(auth.account_token_key(CHANNEL), 'dummy-expired')
     request.next_chunk.side_effect = http_error(401, 'authError')
     with pytest.raises(AuthExpired): instance.upload(req, lambda value: None, CancelToken())
-    assert secrets.get(auth.TOKEN_KEY) is None
+    assert secrets.get(auth.account_token_key(CHANNEL)) is None
 
 
 def test_resume_saved_uri_in_new_service(setup_service, monkeypatch):

@@ -16,20 +16,50 @@ from .paths import PathConfirmationRequired, assess_download_directory
 from .redaction import nonsecret_value
 
 _ALIASES = {'privacy': 'default_privacy', 'language': 'ui_language', 'prompt': 'custom_prompt', 'download_directory': 'download_dir', 'ui_theme': 'theme'}
+_SETTINGS_LOCK = RLock()
 
 
 class JSONSettingsStore:
     def __init__(self, path: Path | None = None) -> None:
         self.path = safe_path(path if path is not None else Path('config/settings.json'))
-        self._lock = RLock()
+        # UI and backend may hold separate instances for the same JSON file.
+        self._lock = _SETTINGS_LOCK
         self._defaults = {'download_dir': str(default_download_directory()), 'theme': 'system',
                           'ui_language': 'vi', 'default_privacy': 'private', 'custom_prompt': '',
-                          'gemini_model': '', 'gemini_prompt_template': '', 'analyze_video_file': False}
+                          'gemini_model': '', 'gemini_prompt_template': '', 'analyze_video_file': False,
+                          'youtube_accounts': []}
         self._values = self._load()
 
     def _validate(self, key: str, value: Any) -> Any:
         if key not in self._defaults:
             raise ValueError('Chỉ được lưu các tùy chọn không nhạy cảm đã định nghĩa.')
+        if key == 'youtube_accounts':
+            value = nonsecret_value(value, reject_text=True)
+            if not isinstance(value, list):
+                raise ValueError('Danh sách kênh không hợp lệ.')
+            ids = set()
+            defaults = 0
+            for account in value:
+                if not isinstance(account, dict) or set(account) != {'id', 'title', 'thumbnail_url', 'is_default'}:
+                    raise ValueError('Chỉ lưu mã/tên/ảnh kênh và lựa chọn mặc định.')
+                channel_id = account['id']
+                if not isinstance(channel_id, str) or not re.fullmatch(r'UC[A-Za-z0-9_-]{22}', channel_id) or channel_id in ids:
+                    raise ValueError('Mã kênh không hợp lệ hoặc trùng lặp.')
+                if not isinstance(account['title'], str) or type(account['is_default']) is not bool:
+                    raise ValueError('Thông tin kênh không hợp lệ.')
+                thumbnail = account['thumbnail_url']
+                if thumbnail is not None:
+                    from urllib.parse import urlsplit
+                    if not isinstance(thumbnail, str):
+                        raise ValueError('Ảnh kênh không hợp lệ.')
+                    parsed = urlsplit(thumbnail)
+                    if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password:
+                        raise ValueError('Ảnh kênh phải là HTTPS an toàn.')
+                ids.add(channel_id)
+                defaults += account['is_default']
+            if value and defaults != 1:
+                raise ValueError('Phải có đúng một kênh mặc định.')
+            return value
         if key == 'analyze_video_file':
             if type(value) is not bool:
                 raise ValueError('Cần giá trị boolean.')
@@ -63,6 +93,7 @@ class JSONSettingsStore:
 
     def get(self, key: str, default: Any = None) -> Any:
         with self._lock:
+            self._values = self._load()
             key = _ALIASES.get(key, key)
             return deepcopy(self._values.get(key, self._defaults.get(key, default)))
 
@@ -73,6 +104,7 @@ class JSONSettingsStore:
             return
         with self._lock:
             validated = self._validate(key, value)
+            self._values = self._load()
             self._save(self._values | {key: validated})
 
     def inspect_download_directory(self):
@@ -84,6 +116,7 @@ class JSONSettingsStore:
         if assessment.requires_user_confirmation and user_confirmed is not True:
             raise PathConfirmationRequired(assessment)
         with self._lock:
+            self._values = self._load()
             self._save(self._values | {'download_dir': self._validate('download_dir', value)})
 
     def _save(self, values: dict) -> None:

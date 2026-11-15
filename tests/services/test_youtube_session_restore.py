@@ -50,7 +50,8 @@ def test_restore_refresh_success_persists_refresh_token(saved_session):
     credentials.refresh.side_effect = lambda request: setattr(credentials, 'expired', False)
     assert youtube.restore_session().id == CHANNEL
     credentials.refresh.assert_called_once()
-    assert json.loads(secrets.get(auth.TOKEN_KEY))['refresh_token'] == 'dummy-refresh-only'
+    assert json.loads(secrets.get(auth.account_token_key(CHANNEL)))['refresh_token'] == 'dummy-refresh-only'
+    assert secrets.get(auth.TOKEN_KEY) is None
     browser.assert_not_called()
 
 

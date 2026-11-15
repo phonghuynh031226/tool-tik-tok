@@ -7,7 +7,7 @@ import re
 
 from app.security.redaction import redact_text
 
-CURRENT_VERSION = 3
+CURRENT_VERSION = 4
 
 
 class MigrationError(RuntimeError):
@@ -92,6 +92,14 @@ def _version_three(db: sqlite3.Connection) -> None:
         PRIMARY KEY(channel_id, video_id))''')
 
 
+def _version_four(db: sqlite3.Connection) -> None:
+    if 'position' not in {row[1] for row in db.execute('PRAGMA table_info(video_stats)')}:
+        db.execute('ALTER TABLE video_stats ADD COLUMN position INTEGER NOT NULL DEFAULT 0')
+    db.execute('''CREATE TABLE IF NOT EXISTS video_cache_state (
+        channel_id TEXT PRIMARY KEY, fetched_at TEXT, requested_limit INTEGER NOT NULL,
+        complete INTEGER NOT NULL DEFAULT 0)''')
+
+
 def migrate(db: sqlite3.Connection) -> None:
     foreign_keys = db.execute('PRAGMA foreign_keys').fetchone()[0]
     db.execute('PRAGMA foreign_keys = OFF')
@@ -106,7 +114,7 @@ def migrate(db: sqlite3.Connection) -> None:
             raise MigrationError('Cơ sở dữ liệu dùng phiên bản không được hỗ trợ; dữ liệu được giữ nguyên.')
         if not versions:
             db.execute('INSERT INTO schema_version(version) VALUES (?)', (0,))
-        for number, upgrade in ((1, _version_one), (2, _version_two), (3, _version_three)):
+        for number, upgrade in ((1, _version_one), (2, _version_two), (3, _version_three), (4, _version_four)):
             if current < number:
                 upgrade(db)
                 db.execute('UPDATE schema_version SET version = ?', (number,))

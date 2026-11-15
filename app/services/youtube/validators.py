@@ -1,10 +1,11 @@
 """Shared pure validators. No OAuth, filesystem or network side effects."""
 
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 import re
 
 from app.contracts import UploadRequest
-from app.errors import ContentInvalid
+from app.errors import ContentInvalid, ScheduleInPast
 
 
 def invalid(message: str) -> ContentInvalid:
@@ -49,10 +50,32 @@ def validate_tags(tags: list[str]) -> None:
         raise invalid('Tổng tags, dấu phẩy và dấu ngoặc kép cho tag có khoảng trắng không được vượt quá 500 ký tự.')
 
 
+def validate_publish_at(publish_at: datetime | None, *, now: datetime | None = None) -> datetime | None:
+    """Application policy: aware UTC instant, at least 10 minutes, at most 365 days.
+
+    These bounds are ours; YouTube's publishAt requires a private, never-public
+    video. A past publishAt may publish immediately (see SCHEDULING.md).
+    """
+    if publish_at is None:
+        return None
+    if not isinstance(publish_at, datetime) or publish_at.tzinfo is None or publish_at.utcoffset() is None:
+        raise invalid('Thời điểm công khai phải là ngày giờ có múi giờ.')
+    now = now if now is not None else datetime.now(timezone.utc)
+    value = publish_at.astimezone(timezone.utc)
+    if value - now < timedelta(minutes=10):
+        error = ScheduleInPast()
+        error.user_message = 'Thời điểm công khai phải cách hiện tại ít nhất 10 phút. Hãy chọn lại lịch hẹn.'
+        raise error
+    if value - now > timedelta(days=365):
+        raise invalid('Chỉ được hẹn công khai trong vòng 365 ngày kể từ hiện tại.')
+    return value
+
+
 def validate_upload_request(req: UploadRequest) -> None:
     validate_title(req.title)
     validate_description(req.description)
     validate_tags(req.tags)
+    validate_publish_at(req.publish_at)
     if req.rights_confirmed is not True:
         raise invalid('Bạn phải xác nhận quyền sử dụng video trước khi upload.')
     if not isinstance(req.made_for_kids, bool):

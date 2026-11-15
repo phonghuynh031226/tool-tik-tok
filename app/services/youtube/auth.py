@@ -16,6 +16,13 @@ from .validators import invalid
 SCOPES = ('https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.readonly')
 CLIENT_KEY = 'youtube.oauth.client'
 TOKEN_KEY = 'youtube.oauth.tokens'
+
+
+def account_token_key(channel_id: str) -> str:
+    import re
+    if not isinstance(channel_id, str) or not re.fullmatch(r'UC[A-Za-z0-9_-]{22}', channel_id):
+        raise ValueError('Mã kênh YouTube không hợp lệ.')
+    return TOKEN_KEY + '.' + channel_id
 SESSION_EXPIRED_MESSAGE = 'Phiên đăng nhập đã hết hạn, hãy bấm Kết nối kênh để đăng nhập lại'
 
 
@@ -111,7 +118,7 @@ def authorize(secret_store):
             credentials = flow.run_local_server(host='127.0.0.1', bind_addr='127.0.0.1', port=0,
                 open_browser=True, timeout_seconds=180, authorization_prompt_message='',
                 success_message='Đã kết nối tài khoản. Hãy quay lại ứng dụng để xác nhận kênh đích.',
-                access_type='offline', prompt='consent')
+                access_type='offline', prompt='select_account consent')
     except Exception as error:
         raise oauth_error(error) from None
     save_credentials(credentials, secret_store)

@@ -24,7 +24,7 @@ from typing import Any, Mapping
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-from app.contracts import HistoryRecord, JobStatus, SecretStore
+from app.contracts import HistoryRecord, JobStatus, SecretStore, UploadRequest, UploadResult
 from app.core.paths import safe_path
 from app.security.redaction import REDACTED, is_sensitive_key, nonsecret_value, redact_text
 from app.security.secrets import KeyringSecretStore
@@ -330,6 +330,37 @@ class SQLiteHistoryRepository:
             rows = self._db.execute('SELECT * FROM jobs WHERE processing_status = ? ORDER BY id DESC',
                                     (JobStatus.SCHEDULED.value,)).fetchall()
             return [self._decode(row) for row in rows]
+
+    def record_scheduled_upload(self, req: UploadRequest, result: UploadResult) -> int:
+        """Idempotent persistence after API returned an id, never mark public here."""
+        if req.publish_at is None or result.status != JobStatus.SCHEDULED:
+            raise ValueError('Kết quả không phải một video đã hẹn giờ.')
+        local_path = str(safe_path(req.path))
+        record = {'local_mp4_path': local_path, 'youtube_title': req.title,
+            'youtube_description': req.description, 'tags': req.tags,
+            'youtube_video_id': result.video_id, 'youtube_url': result.url,
+            'youtube_channel_id': result.channel_id, 'channel_id': result.channel_id,
+            'processing_status': JobStatus.SCHEDULED, 'privacy_status': 'private',
+            'scheduled_at': req.publish_at.astimezone(timezone.utc), 'uploaded_at': None,
+            'made_for_kids': req.made_for_kids, 'rights_confirmed': req.rights_confirmed,
+            'category_id': req.category_id, 'error_message': None}
+        values, _, _ = self._normalize(record)
+        with self._transaction():
+            old = self._db.execute('''SELECT * FROM jobs WHERE youtube_video_id = ?
+                AND (channel_id = ? OR youtube_channel_id = ?) ORDER BY id DESC LIMIT 1''',
+                (result.video_id, result.channel_id, result.channel_id)).fetchone()
+            if old is None:
+                old = self._db.execute('''SELECT * FROM jobs WHERE local_mp4_path = ?
+                    AND youtube_video_id IS NULL ORDER BY id DESC LIMIT 1''', (local_path,)).fetchone()
+            if old is not None:
+                if old['processing_status'] == JobStatus.UPLOADED.value:
+                    return old['id']  # A resumed result must not downgrade confirmed publication.
+                self._db.execute('UPDATE jobs SET ' + ','.join(f'{key}=?' for key in values) + ' WHERE id=?',
+                                 (*values.values(), old['id']))
+                return old['id']
+            values.update(created_at=_utc_now(), extra_json=_json({'schedule_needs_review': False}))
+            cursor = self._db.execute('INSERT INTO jobs (' + ','.join(values) + ') VALUES (' + ','.join('?' for _ in values) + ')', tuple(values.values()))
+            return cursor.lastrowid
 
     def export_csv(self, path: Path | None = None) -> Path:
         destination = safe_path(path if path is not None else Path('data/history.csv'))
