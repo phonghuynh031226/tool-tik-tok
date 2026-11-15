@@ -51,13 +51,17 @@ class AccountCardWidget(QFrame):
         self.update_selection(is_selected)
 
     def _init_ui(self) -> None:
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 10, 14, 10)
-        layout.setSpacing(12)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(14, 10, 14, 10)
+        main_layout.setSpacing(6)
+
+        # Top row: Avatar + Title + Badges
+        top_row = QHBoxLayout()
+        top_row.setSpacing(10)
 
         # Avatar initial
         self.lbl_avatar = QLabel(self)
-        self.lbl_avatar.setFixedSize(40, 40)
+        self.lbl_avatar.setFixedSize(36, 36)
         self.lbl_avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         initial = (self.account.title[:1] or "Y").upper()
         self.lbl_avatar.setText(initial)
@@ -66,33 +70,20 @@ class AccountCardWidget(QFrame):
         palette = ["#3b82f6", "#ef4444", "#10b981", "#8b5cf6", "#f59e0b"]
         bg_col = palette[color_val]
         self.lbl_avatar.setStyleSheet(
-            f"background-color: {bg_col}; color: #ffffff; border-radius: 20px; "
-            f"font-weight: 700; font-size: 16px; border: none;"
+            f"background-color: {bg_col}; color: #ffffff; border-radius: 18px; "
+            f"font-weight: 700; font-size: 15px; border: none;"
         )
-        layout.addWidget(self.lbl_avatar)
+        top_row.addWidget(self.lbl_avatar)
 
-        # Channel info
-        info_col = QVBoxLayout()
-        info_col.setSpacing(2)
-        info_col.setContentsMargins(0, 0, 0, 0)
-
-        title_row = QHBoxLayout()
-        title_row.setSpacing(6)
         self.lbl_title = QLabel(self.account.title or "Kênh YouTube", self)
         self.lbl_title.setStyleSheet(f"font-size: 14px; font-weight: 600; color: {tokens.TEXT_PRIMARY}; border: none; background: transparent;")
-        title_row.addWidget(self.lbl_title)
+        top_row.addWidget(self.lbl_title)
 
         if self.account.is_default:
             self.badge_def = StatusBadge(status="Mặc định", badge_type="info", parent=self)
-            title_row.addWidget(self.badge_def)
-        title_row.addStretch()
-        info_col.addLayout(title_row)
+            top_row.addWidget(self.badge_def)
 
-        self.lbl_id = QLabel(f"ID: {self.account.id}", self)
-        self.lbl_id.setStyleSheet(f"font-size: 11px; color: {tokens.TEXT_MUTED}; border: none; background: transparent;")
-        info_col.addWidget(self.lbl_id)
-
-        layout.addLayout(info_col, stretch=1)
+        top_row.addStretch()
 
         # Status badge
         badge_type = "success" if self.account.status == "connected" else "danger"
@@ -100,30 +91,36 @@ class AccountCardWidget(QFrame):
             "Hết hạn" if self.account.status == "expired" else "Lỗi"
         )
         self.status_badge = StatusBadge(status=badge_text, badge_type=badge_type, parent=self)
-        layout.addWidget(self.status_badge)
+        top_row.addWidget(self.status_badge)
+        main_layout.addLayout(top_row)
 
-        # Integrated per-account action buttons
-        actions_row = QHBoxLayout()
-        actions_row.setSpacing(6)
+        # Bottom row: ID on left, integrated action buttons on right
+        bottom_row = QHBoxLayout()
+        bottom_row.setSpacing(8)
+
+        self.lbl_id = QLabel(f"ID: {self.account.id}", self)
+        self.lbl_id.setStyleSheet(f"font-size: 11px; color: {tokens.TEXT_MUTED}; border: none; background: transparent;")
+        bottom_row.addWidget(self.lbl_id)
+        bottom_row.addStretch()
 
         # "Đăng nhập lại" only visible when expired
         self.btn_card_reconnect = AppButton("Đăng nhập lại", variant="ghost", icon_name="refresh", parent=self)
         self.btn_card_reconnect.setVisible(self.account.status == "expired")
         self.btn_card_reconnect.clicked.connect(lambda: self.reconnect_requested.emit(self.account))
-        actions_row.addWidget(self.btn_card_reconnect)
+        bottom_row.addWidget(self.btn_card_reconnect)
 
         # "Đặt làm mặc định" hidden when account is already default
         self.btn_card_set_default = AppButton("Đặt làm mặc định", variant="secondary", icon_name="check", parent=self)
         self.btn_card_set_default.setVisible(not self.account.is_default)
         self.btn_card_set_default.clicked.connect(lambda: self.set_default_requested.emit(self.account))
-        actions_row.addWidget(self.btn_card_set_default)
+        bottom_row.addWidget(self.btn_card_set_default)
 
         # "Xóa tài khoản"
         self.btn_card_remove = AppButton("Xóa", variant="danger", icon_name="delete", parent=self)
         self.btn_card_remove.clicked.connect(lambda: self.remove_requested.emit(self.account))
-        actions_row.addWidget(self.btn_card_remove)
+        bottom_row.addWidget(self.btn_card_remove)
 
-        layout.addLayout(actions_row)
+        main_layout.addLayout(bottom_row)
 
     def mousePressEvent(self, event) -> None:
         super().mousePressEvent(event)
@@ -191,6 +188,7 @@ class YouTubeChannelsPage(QWidget):
 
         head_sub = QLabel("Theo dõi hiệu suất kênh, chuyển đổi tài khoản và quản lý danh sách video đã tải lên.", container)
         head_sub.setProperty("class", "hintLabel")
+        head_sub.setWordWrap(True)
         head_info.addWidget(head_sub)
         head_row.addLayout(head_info, stretch=1)
 
@@ -220,8 +218,9 @@ class YouTubeChannelsPage(QWidget):
         self.accounts_container.setSpacing(8)
         acc_layout.addLayout(self.accounts_container)
 
-        # Action bar for selected account with clear target indicator
+        # Action bar for selected account (hidden per UX requirement; actions available directly in cards)
         self.acc_actions_widget = QWidget(self.card_accounts)
+        self.acc_actions_widget.setVisible(False)
         self.acc_actions_bar = QHBoxLayout(self.acc_actions_widget)
         self.acc_actions_bar.setContentsMargins(0, 4, 0, 0)
         self.acc_actions_bar.setSpacing(8)
@@ -255,7 +254,7 @@ class YouTubeChannelsPage(QWidget):
         self.stat_subscribers = StatCard(
             title="Người đăng ký",
             value="—",
-            change_text="Số người đăng ký có thể bị làm tròn bởi YouTube",
+            change_text="Ước tính bởi YouTube",
             icon_name="author",
             parent=container,
         )
@@ -309,13 +308,30 @@ class YouTubeChannelsPage(QWidget):
         self.tbl_videos.setHorizontalHeaderLabels([
             "Mã Video", "Tiêu đề", "Ngày đăng", "Chế độ", "Lượt xem", "Lượt thích", "Bình luận"
         ])
-        self.tbl_videos.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        v_head = self.tbl_videos.horizontalHeader()
+        v_head.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        v_head.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        v_head.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        self.tbl_videos.setColumnWidth(2, 160)
+        v_head.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        v_head.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        v_head.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        v_head.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
         self.tbl_videos.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.tbl_videos.setSortingEnabled(True)
         self.tbl_videos.setAlternatingRowColors(True)
         self.tbl_videos.setMinimumHeight(320)
         self.tbl_videos.doubleClicked.connect(self._on_table_double_clicked)
         v_layout.addWidget(self.tbl_videos)
+
+        self.empty_videos = EmptyState(
+            icon_name="video",
+            title="Kênh chưa có video nào",
+            description="Kênh YouTube này chưa có video đã đăng tải hoặc đang tải danh sách.",
+            parent=self.card_videos,
+        )
+        self.empty_videos.setVisible(False)
+        v_layout.addWidget(self.empty_videos)
 
         # Bottom row of table
         act_row = QHBoxLayout()
@@ -384,6 +400,8 @@ class YouTubeChannelsPage(QWidget):
             self.stat_views.set_value("—")
             self.stat_videos.set_value("—")
             self.tbl_videos.setRowCount(0)
+            self.tbl_videos.setVisible(False)
+            self.empty_videos.setVisible(True)
             return
 
         # Render account cards
@@ -413,14 +431,7 @@ class YouTubeChannelsPage(QWidget):
     def _update_action_bar_state(self) -> None:
         if not hasattr(self, "acc_actions_widget"):
             return
-        if not self._selected_account:
-            self.acc_actions_widget.setVisible(False)
-            return
-        self.acc_actions_widget.setVisible(True)
-        self.lbl_selected_acc_target.setText(f"Thao tác cho tài khoản đang chọn: <b>{self._selected_account.title}</b>")
-        self.btn_set_default.setVisible(not self._selected_account.is_default)
-        self.btn_reconnect.setVisible(self._selected_account.status == "expired")
-        self.btn_remove_account.setVisible(True)
+        self.acc_actions_widget.setVisible(False)
 
     def _load_channel_data(self, force_refresh: bool = False) -> None:
         if not self._selected_account:
@@ -471,6 +482,14 @@ class YouTubeChannelsPage(QWidget):
             self._on_videos_loaded(videos)
 
     def _render_videos(self, videos: list[VideoStats]) -> None:
+        if not videos:
+            self.tbl_videos.setVisible(False)
+            self.empty_videos.setVisible(True)
+            self.tbl_videos.setRowCount(0)
+            return
+
+        self.empty_videos.setVisible(False)
+        self.tbl_videos.setVisible(True)
         self.tbl_videos.setSortingEnabled(False)
         self.tbl_videos.setRowCount(len(videos))
 

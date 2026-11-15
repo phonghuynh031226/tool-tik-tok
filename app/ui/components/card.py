@@ -42,17 +42,23 @@ class Card(QFrame):
                 badge = QLabel(str(step_number))
                 badge.setProperty("class", "stepBadge")
                 badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                header_layout.addWidget(badge)
+                badge.setFixedSize(24, 24)
+                badge.setStyleSheet(
+                    f"background-color: {tokens.PRIMARY}; color: {tokens.TEXT_INVERTED}; "
+                    f"border-radius: 12px; font-weight: {tokens.FONT_WEIGHT_BOLD}; border: none;"
+                )
+                header_layout.addWidget(badge, 0, Qt.AlignmentFlag.AlignTop)
             elif icon:
                 icon_lbl = QLabel()
                 icon_lbl.setPixmap(
                     icons.get_colored_icon(icon, tokens.PRIMARY).pixmap(22, 22)
                 )
-                header_layout.addWidget(icon_lbl)
+                header_layout.addWidget(icon_lbl, 0, Qt.AlignmentFlag.AlignTop)
 
             if title:
                 title_box = QVBoxLayout()
-                title_box.setSpacing(tokens.SPACE_XS)
+                title_box.setSpacing(2)
+                title_box.setContentsMargins(0, 0, 0, 0)
 
                 title_label = QLabel(title)
                 title_label.setProperty("class", "stepTitle")
@@ -61,6 +67,7 @@ class Card(QFrame):
                 if subtitle:
                     sub_label = QLabel(subtitle)
                     sub_label.setProperty("class", "stepDesc")
+                    sub_label.setWordWrap(True)
                     title_box.addWidget(sub_label)
 
                 header_layout.addLayout(title_box)
@@ -68,7 +75,7 @@ class Card(QFrame):
             header_layout.addStretch()
 
             if header_action:
-                header_layout.addWidget(header_action)
+                header_layout.addWidget(header_action, 0, Qt.AlignmentFlag.AlignTop)
 
             self.main_layout.addLayout(header_layout)
 

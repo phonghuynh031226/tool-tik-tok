@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QVBoxLayout, QWidget,
 )
 
-from app.core.paths import project_root
+from app.core.paths import project_root, resolve_download_directory
 from app.ui.model_loading import populate_models
 from app.ui import tokens
 from app.ui.components import AppButton, Card, ConfirmDialog
@@ -68,6 +68,7 @@ class SettingsPage(QWidget):
             container,
         )
         sub.setProperty("class", "hintLabel")
+        sub.setWordWrap(True)
         layout.addWidget(sub)
 
         # =============================================================
@@ -110,7 +111,10 @@ class SettingsPage(QWidget):
 
         dir_box = QHBoxLayout()
         self.edit_download_dir = QLineEdit(gen_card)
-        self.edit_download_dir.setText(str(Path(".tmp/downloads").resolve()))
+        initial_dir = resolve_download_directory(
+            self.services.settings.get("download_dir") if self.services.settings else None
+        )
+        self.edit_download_dir.setText(str(initial_dir))
         dir_box.addWidget(self.edit_download_dir, stretch=1)
 
         self.btn_browse_dir = AppButton("Chọn thư mục...", variant="secondary", icon_name="folder-open", parent=gen_card)
@@ -178,12 +182,17 @@ class SettingsPage(QWidget):
         api_layout.addWidget(self.combo_gemini_model, 2, 1, 1, 2)
 
         # Files API video analysis flag
-        self.chk_analyze_video = QCheckBox(
-            "Phân tích video thật qua Files API (Mặc định tắt; chỉ bật khi cần phân tích trực quan file MP4)",
-            api_card,
-        )
+        chk_box = QVBoxLayout()
+        chk_box.setSpacing(2)
+        self.chk_analyze_video = QCheckBox("Phân tích video thật qua Files API", api_card)
         self.chk_analyze_video.toggled.connect(self._on_analyze_video_toggled)
-        api_layout.addWidget(self.chk_analyze_video, 3, 0, 1, 3)
+        chk_box.addWidget(self.chk_analyze_video)
+
+        lbl_chk_hint = QLabel("(Mặc định tắt; chỉ bật khi cần phân tích trực quan file MP4)", api_card)
+        lbl_chk_hint.setStyleSheet(f"font-size: 11px; color: {tokens.TEXT_MUTED}; margin-left: 26px;")
+        lbl_chk_hint.setWordWrap(True)
+        chk_box.addWidget(lbl_chk_hint)
+        api_layout.addLayout(chk_box, 3, 0, 1, 3)
 
         # Custom Prompt Template
         lbl_prompt = QLabel("Mẫu Prompt tùy chỉnh (để trống để dùng mặc định chuẩn SEO):", api_card)
@@ -254,12 +263,16 @@ class SettingsPage(QWidget):
         yt_card.add_layout(yt_layout)
         layout.addWidget(yt_card)
 
-        # Compatibility attributes
+        # Compatibility attributes (kept for test/API compatibility but hidden from UI)
         self.lbl_yt_channel_name = QLabel(self)
+        self.lbl_yt_channel_name.setVisible(False)
         self.lbl_yt_channel_id = QLabel(self)
+        self.lbl_yt_channel_id.setVisible(False)
         self.btn_connect_yt = AppButton("Kết nối kênh", parent=self)
+        self.btn_connect_yt.setVisible(False)
         self.btn_connect_yt.clicked.connect(self._connect_youtube)
         self.btn_disconnect_yt = AppButton("Ngắt kết nối", parent=self)
+        self.btn_disconnect_yt.setVisible(False)
         self.btn_disconnect_yt.clicked.connect(self._disconnect_youtube)
 
         # =============================================================
@@ -357,6 +370,13 @@ class SettingsPage(QWidget):
         if idx >= 0:
             self.combo_def_privacy.setCurrentIndex(idx)
 
+        # Load download directory
+        saved_dir = self.services.settings.get("download_dir") if self.services.settings else None
+        resolved_dir = resolve_download_directory(saved_dir)
+        self.edit_download_dir.setText(str(resolved_dir))
+        if self.services.settings:
+            self.services.settings.set("download_dir", str(resolved_dir))
+
         # Detect yt-dlp version
         try:
             import yt_dlp
@@ -399,8 +419,10 @@ class SettingsPage(QWidget):
         if d:
             p = Path(d)
             if self._check_and_confirm_outside_project_path(p):
-                self.edit_download_dir.setText(str(p.resolve()))
-                self.services.settings.set("download_dir", str(p.resolve()))
+                resolved = resolve_download_directory(p)
+                self.edit_download_dir.setText(str(resolved))
+                if self.services.settings:
+                    self.services.settings.set("download_dir", str(resolved))
 
     @Slot()
     def _browse_client_secret(self) -> None:

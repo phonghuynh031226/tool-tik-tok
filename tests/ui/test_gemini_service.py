@@ -428,23 +428,32 @@ def test_generate_timeout_60s(sample_meta):
 
 def test_select_preferred_model():
     """Test priority selection of default models and handling of missing saved models."""
-    # 1. Prioritize flash-lite when available
-    models = ["gemma-7b-it", "gemini-1.5-pro", "gemini-2.0-flash", "gemini-2.0-flash-lite"]
+    # 1. Prioritize highest version flash-lite when multiple are available, ignore gemma and image
+    models = [
+        "gemma-7b-it",
+        "imagen-3.0-generate",
+        "gemini-1.5-pro",
+        "gemini-2.0-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-3.1-flash-lite",
+        "gemini-2.0-flash-lite",
+    ]
     chosen, switched = select_preferred_model(models)
-    assert chosen == "gemini-2.0-flash-lite"
+    assert chosen == "gemini-3.1-flash-lite"
     assert switched is False
 
-    # 2. Prioritize flash when flash-lite is not available
-    models_no_lite = ["gemma-2-9b", "gemini-1.5-pro", "gemini-1.5-flash"]
+    # 2. Prioritize flash with highest version when flash-lite is not available
+    models_no_lite = ["gemma-2-9b", "imagen-3.0", "gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash"]
     chosen, switched = select_preferred_model(models_no_lite)
-    assert chosen == "gemini-1.5-flash"
+    assert chosen == "gemini-2.0-flash"
     assert switched is False
 
-    # 3. Gemma is never auto-selected if another model is available
-    models_with_gemma = ["gemma-2-27b", "gemini-1.5-pro"]
-    chosen, switched = select_preferred_model(models_with_gemma)
+    # 3. Gemma and image models are never auto-selected if another model is available
+    models_with_gemma_image = ["gemma-2-27b", "image-preview-01", "gemini-1.5-pro"]
+    chosen, switched = select_preferred_model(models_with_gemma_image)
     assert chosen == "gemini-1.5-pro"
     assert "gemma" not in chosen
+    assert "image" not in chosen
 
     # 4. Respect saved model if still present in models list
     chosen, switched = select_preferred_model(

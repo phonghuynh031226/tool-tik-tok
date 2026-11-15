@@ -135,50 +135,68 @@ def validate_and_sanitize_content(
     )
 
 
+def _extract_model_version(model_name: str) -> tuple[int, ...]:
+    """Extract numeric version tuple from model name, e.g. 'gemini-3.1-flash-lite' -> (3, 1)."""
+    match = re.search(r"(\d+(?:\.\d+)*)", model_name)
+    if match:
+        try:
+            return tuple(int(p) for p in match.group(1).split("."))
+        except ValueError:
+            pass
+    return (0,)
+
+
 def select_preferred_model(
     models: list[str], saved_model: Optional[str] = None
 ) -> tuple[str, bool]:
     """Select preferred default model according to priority rules:
     - Never auto-select 'gemma' models.
-    - Prioritize models containing 'gemini' and 'flash'.
-    - Highest priority: models containing 'flash-lite' (or 'lite').
+    - Ignore models containing 'image' or 'imagen'.
+    - Highest priority: models containing 'flash-lite' (or 'lite'), ordered by highest version descending.
+    - Next priority: other models containing 'flash', ordered by highest version descending.
+    - Next priority: other 'gemini' models, ordered by highest version descending.
     - If saved_model is provided and exists in models, keep it (returns (saved_model, False)).
     - If saved_model is not in models, switch to preferred model and return (model, True) to notify user.
     """
     if not models:
-        return "gemini-2.0-flash", False
+        return "gemini-3.1-flash-lite", False
 
-    # Filter out gemma models from automatic selection
-    non_gemma = [m for m in models if "gemma" not in m.casefold()]
-    candidate_pool = non_gemma if non_gemma else list(models)
+    # Filter out gemma and image models from automatic selection
+    filtered = [
+        m for m in models
+        if "gemma" not in m.casefold() and "image" not in m.casefold()
+    ]
+    candidate_pool = filtered if filtered else list(models)
 
     # If saved_model is valid and still in models list, respect it
     if saved_model and saved_model in models:
         return saved_model, False
 
-    # Priority 1: contains 'gemini' and 'flash' and ('flash-lite' or 'lite')
+    # Priority 1: flash-lite (or lite) with highest version number
     p1 = [
         m
         for m in candidate_pool
-        if "gemini" in m.casefold()
-        and "flash" in m.casefold()
+        if "flash" in m.casefold()
         and ("flash-lite" in m.casefold() or "lite" in m.casefold())
     ]
     if p1:
+        p1.sort(key=_extract_model_version, reverse=True)
         chosen = p1[0]
     else:
-        # Priority 2: contains 'gemini' and 'flash'
+        # Priority 2: other flash models with highest version number
         p2 = [
             m
             for m in candidate_pool
-            if "gemini" in m.casefold() and "flash" in m.casefold()
+            if "flash" in m.casefold()
         ]
         if p2:
+            p2.sort(key=_extract_model_version, reverse=True)
             chosen = p2[0]
         else:
-            # Priority 3: contains 'gemini'
+            # Priority 3: other gemini models with highest version number
             p3 = [m for m in candidate_pool if "gemini" in m.casefold()]
             if p3:
+                p3.sort(key=_extract_model_version, reverse=True)
                 chosen = p3[0]
             else:
                 chosen = candidate_pool[0]

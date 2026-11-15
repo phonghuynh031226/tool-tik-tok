@@ -55,6 +55,7 @@ class StatCard(QFrame):
         if change_text:
             self.lbl_change = QLabel(change_text, self)
             self.lbl_change.setStyleSheet(f"font-size: 11px; color: {tokens.TEXT_MUTED};")
+            self.lbl_change.setWordWrap(True)
             text_layout.addWidget(self.lbl_change)
 
         layout.addLayout(text_layout)

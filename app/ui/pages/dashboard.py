@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.contracts import DownloadResult, GeneratedContent, JobStatus, VideoMeta
+from app.core.paths import resolve_download_directory
 from app.ui.model_loading import populate_models
 from app.ui import tokens
 from app.ui.components import (
@@ -102,7 +103,7 @@ class DashboardPage(QWidget):
         s1_layout = QVBoxLayout()
         s1_layout.setSpacing(10)
 
-        # URL Input row
+        # URL Input row (Row 1)
         url_row = QHBoxLayout()
         url_row.setSpacing(8)
 
@@ -114,16 +115,22 @@ class DashboardPage(QWidget):
         self.btn_paste = AppButton("Dán", variant="secondary", icon_name="content-paste", parent=self.step1_card)
         self.btn_paste.clicked.connect(self._on_paste_clicked)
         url_row.addWidget(self.btn_paste)
+        s1_layout.addLayout(url_row)
+
+        # Download / Pick file actions row (Row 2)
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
 
         self.btn_download = AppButton("Tải video", variant="primary", icon_name="download", parent=self.step1_card)
         self.btn_download.clicked.connect(self._on_download_clicked)
-        url_row.addWidget(self.btn_download)
+        action_row.addWidget(self.btn_download)
 
         self.btn_pick_file = AppButton("Chọn MP4 từ máy", variant="secondary", icon_name="folder-open", parent=self.step1_card)
         self.btn_pick_file.clicked.connect(self._on_pick_file_clicked)
-        url_row.addWidget(self.btn_pick_file)
+        action_row.addWidget(self.btn_pick_file)
+        action_row.addStretch()
 
-        s1_layout.addLayout(url_row)
+        s1_layout.addLayout(action_row)
 
         # Download Progress and cancel
         progress_row = QHBoxLayout()
@@ -172,6 +179,7 @@ class DashboardPage(QWidget):
         meta_layout.addWidget(self.lbl_meta_status, 2, 1)
 
         s1_layout.addWidget(self.tiktok_meta_box)
+        s1_layout.addStretch(1)
         self.step1_card.add_layout(s1_layout)
 
         # ==========================================
@@ -199,32 +207,37 @@ class DashboardPage(QWidget):
         s3_layout = QVBoxLayout()
         s3_layout.setSpacing(12)
 
-        # Model row + Generate Button
-        ai_top_row = QHBoxLayout()
-        ai_top_row.setSpacing(10)
+        # Model row + Generate Button (Row 1)
+        ai_row1 = QHBoxLayout()
+        ai_row1.setSpacing(10)
 
         lbl_model = QLabel("Mô hình AI:", self.step3_card)
         lbl_model.setProperty("class", "fieldLabel")
-        ai_top_row.addWidget(lbl_model)
+        ai_row1.addWidget(lbl_model)
 
         self.combo_model = QComboBox(self.step3_card)
         self._populate_models()
-        ai_top_row.addWidget(self.combo_model)
+        self.combo_model.currentIndexChanged.connect(self._on_model_combo_changed)
+        ai_row1.addWidget(self.combo_model, stretch=1)
 
         self.btn_generate_ai = AppButton("Tạo nội dung AI", variant="primary", icon_name="creation", parent=self.step3_card)
         self.btn_generate_ai.clicked.connect(self._on_generate_clicked)
-        ai_top_row.addWidget(self.btn_generate_ai)
+        ai_row1.addWidget(self.btn_generate_ai)
+        s3_layout.addLayout(ai_row1)
+
+        # Secondary Actions (Row 2)
+        ai_row2 = QHBoxLayout()
+        ai_row2.setSpacing(8)
 
         self.btn_restore_original = AppButton("Khôi phục gốc", variant="secondary", icon_name="history", parent=self.step3_card)
         self.btn_restore_original.clicked.connect(self._on_restore_original_clicked)
-        ai_top_row.addWidget(self.btn_restore_original)
+        ai_row2.addWidget(self.btn_restore_original)
 
         self.btn_copy_all = AppButton("Sao chép", variant="secondary", icon_name="content-copy", parent=self.step3_card)
         self.btn_copy_all.clicked.connect(self._on_copy_all_clicked)
-        ai_top_row.addWidget(self.btn_copy_all)
-
-        ai_top_row.addStretch()
-        s3_layout.addLayout(ai_top_row)
+        ai_row2.addWidget(self.btn_copy_all)
+        ai_row2.addStretch()
+        s3_layout.addLayout(ai_row2)
 
         # AI Progress Bar
         self.progress_ai = QProgressBar(self.step3_card)
@@ -407,19 +420,20 @@ class DashboardPage(QWidget):
             "YouTube sẽ tự động công khai video đúng thời điểm hẹn, bạn không cần giữ ứng dụng chạy.",
             self.schedule_container,
         )
+        self.lbl_schedule_note.setWordWrap(True)
         self.lbl_schedule_note.setStyleSheet("color: #94a3b8; font-size: 11px;")
         sc_layout.addWidget(self.lbl_schedule_note)
 
         s4_layout.addWidget(self.schedule_container)
 
         # Settings Form: Privacy and Made for Kids
-        form_grid = QGridLayout()
-        form_grid.setSpacing(14)
+        form_layout = QVBoxLayout()
+        form_layout.setSpacing(10)
 
         # Privacy
         lbl_privacy = QLabel("Chế độ hiển thị (Privacy):", self.step4_card)
         lbl_privacy.setProperty("class", "fieldLabel")
-        form_grid.addWidget(lbl_privacy, 0, 0)
+        form_layout.addWidget(lbl_privacy)
 
         self.combo_privacy = QComboBox(self.step4_card)
         self.combo_privacy.addItem("Riêng tư (Private) - Mặc định an toàn", "private")
@@ -427,19 +441,21 @@ class DashboardPage(QWidget):
         self.combo_privacy.addItem("Công khai (Public)", "public")
         self.combo_privacy.setCurrentIndex(0)  # Default: Private
         self.combo_privacy.currentIndexChanged.connect(self._on_privacy_changed)
-        form_grid.addWidget(self.combo_privacy, 1, 0)
+        form_layout.addWidget(self.combo_privacy)
 
         self.lbl_privacy_hint = QLabel("Đã khóa ở chế độ Riêng tư cho đến giờ hẹn công khai.", self.step4_card)
         self.lbl_privacy_hint.setStyleSheet("color: #38bdf8; font-size: 11px;")
+        self.lbl_privacy_hint.setWordWrap(True)
         self.lbl_privacy_hint.setVisible(False)
-        form_grid.addWidget(self.lbl_privacy_hint, 2, 0)
+        form_layout.addWidget(self.lbl_privacy_hint)
 
         # Made for Kids: KHÔNG CHỌN SẴN, BẮT BUỘC CHỌN
         lbl_kids = QLabel("Nội dung dành cho trẻ em? (Bắt buộc chọn):", self.step4_card)
         lbl_kids.setProperty("class", "fieldLabel")
-        form_grid.addWidget(lbl_kids, 0, 1)
+        form_layout.addWidget(lbl_kids)
 
         kids_btn_box = QHBoxLayout()
+        kids_btn_box.setSpacing(16)
         self.radio_kids_yes = QRadioButton("Có, dành cho trẻ em", self.step4_card)
         self.radio_kids_no = QRadioButton("Không, không dành cho trẻ em", self.step4_card)
         self.kids_group = QButtonGroup(self.step4_card)
@@ -452,27 +468,43 @@ class DashboardPage(QWidget):
         kids_btn_box.addWidget(self.radio_kids_yes)
         kids_btn_box.addWidget(self.radio_kids_no)
         kids_btn_box.addStretch()
-        form_grid.addLayout(kids_btn_box, 1, 1)
+        form_layout.addLayout(kids_btn_box)
 
-        s4_layout.addLayout(form_grid)
+        s4_layout.addLayout(form_layout)
 
         # Checkbox: "Tôi xác nhận có quyền sử dụng video này" (BẮT BUỘC)
         self.chk_rights = QCheckBox(
-            "Tôi xác nhận có quyền sử dụng video này và chịu hoàn toàn trách nhiệm về bản quyền.",
+            "Tôi xác nhận có quyền sử dụng video này",
             self.step4_card,
         )
         self.chk_rights.setStyleSheet("font-weight: 600; color: #f8fafc;")
         self.chk_rights.toggled.connect(self._on_rights_changed)
         s4_layout.addWidget(self.chk_rights)
 
+        lbl_rights_hint = QLabel(
+            "Chịu hoàn toàn trách nhiệm về bản quyền và quyền phân phối nội dung.",
+            self.step4_card,
+        )
+        lbl_rights_hint.setWordWrap(True)
+        lbl_rights_hint.setStyleSheet("color: #94a3b8; font-size: 11px; margin-left: 20px;")
+        s4_layout.addWidget(lbl_rights_hint)
+
         # Checkbox: Chế độ Dry-run
         self.chk_dry_run = QCheckBox(
-            "Chế độ chạy thử (Dry-run) - Chạy toàn bộ luồng nhưng không gọi tải lên YouTube thật",
+            "Chế độ chạy thử (Dry-run)",
             self.step4_card,
         )
         self.chk_dry_run.setStyleSheet("color: #93c5fd;")
         self.chk_dry_run.toggled.connect(self._on_dry_run_toggled)
         s4_layout.addWidget(self.chk_dry_run)
+
+        lbl_dry_run_hint = QLabel(
+            "Chạy toàn bộ luồng xử lý nhưng không gọi API tải lên YouTube thật.",
+            self.step4_card,
+        )
+        lbl_dry_run_hint.setWordWrap(True)
+        lbl_dry_run_hint.setStyleSheet("color: #93c5fd; font-size: 11px; margin-left: 20px;")
+        s4_layout.addWidget(lbl_dry_run_hint)
 
         # Upload Action Bar
         upload_action_row = QHBoxLayout()
@@ -566,11 +598,21 @@ class DashboardPage(QWidget):
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
-        self._update_layout_mode(event.size().width())
+        vp_width = self.scroll_area.viewport().width() if hasattr(self, "scroll_area") else event.size().width()
+        self._update_layout_mode(vp_width)
 
     def _update_layout_mode(self, width: int) -> None:
-        """Switch between 2-column layout (>=1150px) and 1-column layout (<1150px)."""
-        is_wide = width >= 1150
+        """Switch between 2-column layout and 1-column layout dynamically based on card minimum sizes."""
+        c1 = self.step1_card.minimumSizeHint().width()
+        c2 = self.step2_card.minimumSizeHint().width()
+        c3 = self.step3_card.minimumSizeHint().width()
+        c4 = self.step4_card.minimumSizeHint().width()
+        col0_min = max(c1, c2, 500)
+        col1_min = max(c3, c4, 520)
+        spacing = self.steps_grid.spacing()
+        # 2 columns require comfortable col0 + col1 + spacing + container margins & buffer
+        needed_width = max(col0_min + col1_min + spacing + 60, 1100)
+        is_wide = width >= needed_width
         if self._is_wide_layout == is_wide:
             return
         self._is_wide_layout = is_wide
@@ -844,7 +886,8 @@ class DashboardPage(QWidget):
     @Slot(object)
     def _on_fetch_meta_finished(self, meta: VideoMeta) -> None:
         self.state.meta = meta
-        dest_dir = Path(".tmp/downloads")
+        saved_dir = self.services.settings.get("download_dir") if self.services.settings else None
+        dest_dir = resolve_download_directory(saved_dir)
         dest_dir.mkdir(parents=True, exist_ok=True)
 
         worker = DownloadVideoWorker(self.services.tiktok, meta, dest_dir)
@@ -1423,7 +1466,21 @@ class DashboardPage(QWidget):
             self.progress_upload.setVisible(False)
 
 
+    @Slot(int)
+    def _on_model_combo_changed(self, idx: int) -> None:
+        model = self.combo_model.itemData(idx)
+        if model and self.services.settings:
+            self.services.settings.set("gemini_model", model)
+
     @Slot(str, str)
     def _on_model_selected(self, model, message):
-        self.services.settings.set('gemini_model', model)
+        if self.services.settings:
+            self.services.settings.set('gemini_model', model)
         self.lbl_model_notice.setText(message)
+        self.combo_model.blockSignals(True)
+        idx = self.combo_model.findData(model)
+        if idx < 0:
+            self.combo_model.addItem(model, model)
+            idx = self.combo_model.count() - 1
+        self.combo_model.setCurrentIndex(idx)
+        self.combo_model.blockSignals(False)

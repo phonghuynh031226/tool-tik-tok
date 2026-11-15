@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.contracts import DownloadResult, GeneratedContent, VideoMeta
+from app.core.paths import resolve_download_directory
 from app.ui.model_loading import populate_models
 from app.ui import tokens
 from app.ui.components import AppButton, Card, EmptyState, ToastManager
@@ -44,6 +45,7 @@ class ToolsPage(QWidget):
         self._downloaded_files: list[dict[str, str]] = []
 
         self._init_ui()
+        self.services.gemini_selection.changed.connect(self._on_model_selected)
         self._connect_state()
         self.lbl_model_notice = QLabel(self)
         self.lbl_model_notice.setVisible(False)
@@ -112,10 +114,11 @@ class ToolsPage(QWidget):
         layout.addWidget(lbl_head)
 
         lbl_sub = QLabel(
-            "Tải video TikTok về máy không dính watermark, lưu vào thư mục tùy chọn mà không bắt buộc tạo tác vụ đầy đủ.",
+            "Chỉ tải video bạn sở hữu hoặc được phép sử dụng, lưu vào thư mục tùy chọn mà không bắt buộc tạo tác vụ đầy đủ.",
             container,
         )
         lbl_sub.setProperty("class", "hintLabel")
+        lbl_sub.setWordWrap(True)
         layout.addWidget(lbl_sub)
 
         # Input Card
@@ -123,26 +126,31 @@ class ToolsPage(QWidget):
         c_layout = QVBoxLayout()
         c_layout.setSpacing(12)
 
-        # URL row
-        row_url = QHBoxLayout()
-        row_url.setSpacing(8)
+        # URL row 1
+        row_url1 = QHBoxLayout()
+        row_url1.setSpacing(8)
         self.input_url = QLineEdit(input_card)
         self.edit_url = self.input_url  # alias
         self.input_url.setPlaceholderText("Dán liên kết TikTok tại đây: https://www.tiktok.com/@.../video/...")
-        row_url.addWidget(self.input_url, stretch=1)
+        row_url1.addWidget(self.input_url, stretch=1)
 
         self.btn_paste = AppButton("Dán", variant="secondary", icon_name="paste", parent=input_card)
         self.btn_paste.clicked.connect(self._on_paste_tiktok)
-        row_url.addWidget(self.btn_paste)
+        row_url1.addWidget(self.btn_paste)
+        c_layout.addLayout(row_url1)
 
+        # URL row 2: actions
+        row_url2 = QHBoxLayout()
+        row_url2.setSpacing(8)
         self.btn_download = AppButton("Tải về máy", variant="primary", icon_name="download", parent=input_card)
         self.btn_download.clicked.connect(self._on_download_tiktok)
-        row_url.addWidget(self.btn_download)
+        row_url2.addWidget(self.btn_download)
 
         self.btn_pick_file = AppButton("Chọn MP4 từ máy", variant="secondary", icon_name="folder", parent=input_card)
         self.btn_pick_file.clicked.connect(self._on_pick_file)
-        row_url.addWidget(self.btn_pick_file)
-        c_layout.addLayout(row_url)
+        row_url2.addWidget(self.btn_pick_file)
+        row_url2.addStretch()
+        c_layout.addLayout(row_url2)
 
         # Folder selection row
         row_folder = QHBoxLayout()
@@ -151,12 +159,10 @@ class ToolsPage(QWidget):
         lbl_dir.setProperty("class", "fieldLabel")
         row_folder.addWidget(lbl_dir)
 
-        default_dir = (
-            self.services.settings.get("download_dir", ".tmp/downloads")
-            if self.services.settings else ".tmp/downloads"
-        )
+        saved_dir = self.services.settings.get("download_dir") if self.services.settings else None
+        default_dir = resolve_download_directory(saved_dir)
         self.edit_download_dir = QLineEdit(input_card)
-        self.edit_download_dir.setText(str(Path(default_dir).resolve()))
+        self.edit_download_dir.setText(str(default_dir))
         row_folder.addWidget(self.edit_download_dir, stretch=1)
 
         self.btn_browse_folder = AppButton("Chọn thư mục...", variant="secondary", icon_name="browse", parent=input_card)
@@ -201,7 +207,16 @@ class ToolsPage(QWidget):
         self.tbl_downloads.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.tbl_downloads.setAlternatingRowColors(True)
         self.tbl_downloads.setMinimumHeight(240)
+        self.tbl_downloads.setVisible(False)
         t_layout.addWidget(self.tbl_downloads)
+
+        self.empty_downloads = EmptyState(
+            icon_name="download",
+            title="Chưa có video nào được tải về",
+            description="Các video bạn tải trong phiên này sẽ xuất hiện ở bảng trên.",
+            parent=table_card,
+        )
+        t_layout.addWidget(self.empty_downloads)
 
         # Bottom toolbar for downloads table
         btn_bar = QHBoxLayout()
@@ -246,6 +261,7 @@ class ToolsPage(QWidget):
             container,
         )
         lbl_sub.setProperty("class", "hintLabel")
+        lbl_sub.setWordWrap(True)
         layout.addWidget(lbl_sub)
 
         # Input Card
@@ -278,34 +294,38 @@ class ToolsPage(QWidget):
         self.edit_ai_orig_desc.setMaximumHeight(80)
         in_layout.addWidget(self.edit_ai_orig_desc)
 
-        # Model & Tone row
-        row_cfg = QHBoxLayout()
-        row_cfg.setSpacing(12)
+        # Model & Tone row (Row 1)
+        row_cfg1 = QHBoxLayout()
+        row_cfg1.setSpacing(12)
 
         lbl_model = QLabel("Mô hình AI:", in_card)
         lbl_model.setProperty("class", "fieldLabel")
-        row_cfg.addWidget(lbl_model)
+        row_cfg1.addWidget(lbl_model)
 
         self.combo_model = QComboBox(in_card)
         populate_models(self.combo_model, self.services, notify=False)
-        row_cfg.addWidget(self.combo_model, stretch=1)
+        self.combo_model.currentIndexChanged.connect(self._on_model_combo_changed)
+        row_cfg1.addWidget(self.combo_model, stretch=1)
 
         lbl_tone = QLabel("Phong cách:", in_card)
         lbl_tone.setProperty("class", "fieldLabel")
-        row_cfg.addWidget(lbl_tone)
+        row_cfg1.addWidget(lbl_tone)
 
         self.combo_tone = QComboBox(in_card)
         self.combo_tone.addItem("Hấp dẫn & Cuốn hút", "engaging")
         self.combo_tone.addItem("Hài hước & Thân thiện", "humorous")
         self.combo_tone.addItem("Chuyên nghiệp & Tin tức", "professional")
         self.combo_tone.addItem("Ngắn gọn & Súc tích", "concise")
-        row_cfg.addWidget(self.combo_tone, stretch=1)
+        row_cfg1.addWidget(self.combo_tone, stretch=1)
+        in_layout.addLayout(row_cfg1)
 
+        # Generate action row (Row 2)
+        row_cfg2 = QHBoxLayout()
         self.btn_generate_ai = AppButton("Tạo nội dung AI", variant="primary", icon_name="sparkle", parent=in_card)
         self.btn_generate_ai.clicked.connect(self._on_generate_ai_clicked)
-        row_cfg.addWidget(self.btn_generate_ai)
-
-        in_layout.addLayout(row_cfg)
+        row_cfg2.addWidget(self.btn_generate_ai)
+        row_cfg2.addStretch()
+        in_layout.addLayout(row_cfg2)
 
         self.progress_ai = QProgressBar(in_card)
         self.progress_ai.setRange(0, 100)
@@ -505,6 +525,8 @@ class ToolsPage(QWidget):
         self._active_download_worker = None
 
         # Add to table
+        self.empty_downloads.setVisible(False)
+        self.tbl_downloads.setVisible(True)
         file_path = Path(result.path)
         size_mb = f"{file_path.stat().st_size / (1024 * 1024):.1f} MB" if file_path.exists() else "-"
         video_id = result.meta.video_id if result.meta else file_path.stem
@@ -558,6 +580,8 @@ class ToolsPage(QWidget):
         )
         if file_path:
             p = Path(file_path)
+            self.empty_downloads.setVisible(False)
+            self.tbl_downloads.setVisible(True)
             row = self.tbl_downloads.rowCount()
             self.tbl_downloads.insertRow(row)
             self.tbl_downloads.setItem(row, 0, QTableWidgetItem(p.stem))
@@ -744,3 +768,21 @@ class ToolsPage(QWidget):
         self.state.tags = [t.strip() for t in self.edit_tags.text().split(",") if t.strip()]
 
         self._notify("success", "Đã áp dụng", "Nội dung AI đã được chuyển sang quy trình Tổng quan.")
+
+    @Slot(int)
+    def _on_model_combo_changed(self, idx: int) -> None:
+        model = self.combo_model.itemData(idx)
+        if model and self.services.settings:
+            self.services.settings.set("gemini_model", model)
+
+    @Slot(str, str)
+    def _on_model_selected(self, model: str, message: str) -> None:
+        if self.services.settings:
+            self.services.settings.set("gemini_model", model)
+        self.combo_model.blockSignals(True)
+        idx = self.combo_model.findData(model)
+        if idx < 0:
+            self.combo_model.addItem(model, model)
+            idx = self.combo_model.count() - 1
+        self.combo_model.setCurrentIndex(idx)
+        self.combo_model.blockSignals(False)

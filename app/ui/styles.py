@@ -152,7 +152,7 @@ QLabel.statLabel {{
 }}
 
 /* Step badges and titles */
-QLabel.stepBadge {{
+QFrame.card QLabel.stepBadge, QLabel.stepBadge {{
     background-color: {tokens.PRIMARY};
     color: {tokens.TEXT_INVERTED};
     font-weight: {tokens.FONT_WEIGHT_BOLD};

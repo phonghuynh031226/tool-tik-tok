@@ -16,8 +16,9 @@ from PySide6.QtWidgets import (
 )
 
 from app.contracts import HistoryRecord, JobStatus, UploadResult
+from app.core.paths import resolve_download_directory
 from app.ui import tokens
-from app.ui.components import AppButton, Card, StatusBadge, ToastManager
+from app.ui.components import AppButton, Card, EmptyState, StatusBadge, ToastManager
 from app.ui.icons import get_icon
 from app.ui.services import ServiceContainer
 from app.ui.state import JobState
@@ -105,6 +106,7 @@ class HistoryPage(QWidget):
             container,
         )
         sub.setProperty("class", "hintLabel")
+        sub.setWordWrap(True)
         head_info.addWidget(sub)
         header_row.addLayout(head_info, stretch=1)
 
@@ -115,6 +117,7 @@ class HistoryPage(QWidget):
 
         # Filter Card
         filter_card = Card(parent=container)
+        filter_card.main_layout.setContentsMargins(12, 10, 12, 10)
         f_layout = QHBoxLayout()
         f_layout.setSpacing(10)
 
@@ -149,12 +152,21 @@ class HistoryPage(QWidget):
         header_view.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header_view.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         header_view.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        self.table.setColumnWidth(4, 300)
+        self.table.setColumnWidth(4, 340)
         self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setDefaultSectionSize(44)
+        self.table.verticalHeader().setDefaultSectionSize(48)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setAlternatingRowColors(True)
         layout.addWidget(self.table)
+
+        self.empty_history = EmptyState(
+            icon_name="history",
+            title="Chưa có bản ghi lịch sử",
+            description="Các video bạn đã tải, xử lý và tải lên YouTube sẽ hiển thị tại đây.",
+            parent=container,
+        )
+        self.empty_history.setVisible(False)
+        layout.addWidget(self.empty_history)
 
         return container
 
@@ -179,6 +191,7 @@ class HistoryPage(QWidget):
             container,
         )
         h_sub.setProperty("class", "hintLabel")
+        h_sub.setWordWrap(True)
         h_info.addWidget(h_sub)
         h_row.addLayout(h_info, stretch=1)
 
@@ -212,9 +225,19 @@ class HistoryPage(QWidget):
         s_head.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         s_head.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
         self.tbl_scheduled.verticalHeader().setVisible(False)
+        self.tbl_scheduled.verticalHeader().setDefaultSectionSize(48)
         self.tbl_scheduled.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.tbl_scheduled.setAlternatingRowColors(True)
         layout.addWidget(self.tbl_scheduled)
+
+        self.empty_scheduled = EmptyState(
+            icon_name="clock",
+            title="Không có video hẹn giờ",
+            description="Chưa có video nào được lên lịch phát hành tự động trên YouTube.",
+            parent=container,
+        )
+        self.empty_scheduled.setVisible(False)
+        layout.addWidget(self.empty_scheduled)
 
         return container
 
@@ -256,6 +279,14 @@ class HistoryPage(QWidget):
             "CANCELLED": "Đã hủy",
         }
 
+        if not records:
+            self.table.setVisible(False)
+            self.empty_history.setVisible(True)
+            self.table.setRowCount(0)
+            return
+
+        self.empty_history.setVisible(False)
+        self.table.setVisible(True)
         self.table.setRowCount(len(records))
         for row, rec in enumerate(records):
             source_id = str(rec.get("tiktok_video_id") or rec.get("video_id") or "")
@@ -300,17 +331,23 @@ class HistoryPage(QWidget):
             btn_resume = AppButton("Tiếp tục", variant="primary", icon_name="play")
             btn_resume.setEnabled(status_val != "DRY_RUN")
             btn_resume.setFixedHeight(28)
+            btn_resume.setStyleSheet("padding: 2px 8px; font-size: 12px;")
+            btn_resume.setToolTip("Tiếp tục tác vụ này trong Tổng quan")
             btn_resume.clicked.connect(lambda _, r=rec: self._resume_job(r))
             a_layout.addWidget(btn_resume)
 
             btn_folder = AppButton("Thư mục", variant="secondary", icon_name="folder")
             btn_folder.setFixedHeight(28)
+            btn_folder.setStyleSheet("padding: 2px 8px; font-size: 12px;")
+            btn_folder.setToolTip("Mở thư mục chứa video trên máy tính")
             btn_folder.clicked.connect(lambda _, p=path_str: self._open_mp4_folder(p))
             a_layout.addWidget(btn_folder)
 
             if url:
                 btn_open = AppButton("YouTube", variant="secondary", icon_name="link")
                 btn_open.setFixedHeight(28)
+                btn_open.setStyleSheet("padding: 2px 8px; font-size: 12px;")
+                btn_open.setToolTip("Mở video trên YouTube")
                 btn_open.clicked.connect(lambda _, u=url: QDesktopServices.openUrl(QUrl(u)))
                 a_layout.addWidget(btn_open)
 
@@ -321,7 +358,8 @@ class HistoryPage(QWidget):
         if p and p.exists():
             folder = p.parent if p.is_file() else p
         else:
-            folder = Path(".tmp/downloads").resolve()
+            saved_dir = self.services.settings.get("download_dir") if self.services.settings else None
+            folder = resolve_download_directory(saved_dir)
             folder.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
 
@@ -393,6 +431,14 @@ class HistoryPage(QWidget):
         self._render_scheduled(self._scheduled_records)
 
     def _render_scheduled(self, records: list[dict]) -> None:
+        if not records:
+            self.tbl_scheduled.setVisible(False)
+            self.empty_scheduled.setVisible(True)
+            self.tbl_scheduled.setRowCount(0)
+            return
+
+        self.empty_scheduled.setVisible(False)
+        self.tbl_scheduled.setVisible(True)
         self.tbl_scheduled.setRowCount(len(records))
         now_utc = datetime.now(timezone.utc)
 

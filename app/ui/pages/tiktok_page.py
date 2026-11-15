@@ -54,7 +54,7 @@ class TikTokPage(QWidget):
         layout.addWidget(header)
 
         sub = QLabel(
-            "Tự động tải video gốc không logo / watermark, bóc tách thông tin và chuẩn bị cho pipeline.",
+            "Chỉ tải video bạn sở hữu hoặc được phép sử dụng, bóc tách thông tin và chuẩn bị cho pipeline.",
             container,
         )
         sub.setProperty("class", "hintLabel")
