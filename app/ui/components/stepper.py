@@ -165,7 +165,7 @@ class StepItemWidget(QFrame):
 
 
 class WorkflowStepper(QFrame):
-    """Horizontal 4-step workflow indicator."""
+    """Horizontal 3-step workflow indicator."""
 
     step_selected = Signal(int)
 
@@ -183,10 +183,9 @@ class WorkflowStepper(QFrame):
         layout.setSpacing(10)
 
         steps = [
-            (1, "Nguồn Video"),
-            (2, "Xem trước"),
-            (3, "Tối ưu AI"),
-            (4, "Xuất bản YouTube"),
+            (1, "Video"),
+            (2, "Nội dung AI"),
+            (3, "Đăng YouTube"),
         ]
 
         for step_num, title in steps:
@@ -198,8 +197,12 @@ class WorkflowStepper(QFrame):
     def set_step_state(self, step_number: int, state: StepState) -> None:
         if step_number in self._items:
             self._items[step_number].set_state(state)
+        elif step_number == 4 and 3 in self._items:
+            self._items[3].set_state(state)
 
     def get_step_state(self, step_number: int) -> StepState:
         if step_number in self._items:
             return self._items[step_number]._state
+        elif step_number == 4 and 3 in self._items:
+            return self._items[3]._state
         return "pending"

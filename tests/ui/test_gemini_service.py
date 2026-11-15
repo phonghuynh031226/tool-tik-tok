@@ -471,4 +471,23 @@ def test_select_preferred_model():
     assert chosen == "gemini-2.0-flash"
     assert switched is True
 
+    # 6. Exclude preview and exp models from default selection when stable models exist
+    models_with_preview = [
+        "gemini-omni-flash-preview",
+        "gemini-2.0-flash-exp",
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
+    ]
+    chosen, switched = select_preferred_model(models_with_preview)
+    assert chosen == "gemini-2.5-flash-lite"
+    assert "preview" not in chosen
+    assert "exp" not in chosen
+    assert switched is False
+
+    # 7. Fallback to preview when no stable model is available, setting switched=True
+    models_only_preview = ["gemini-omni-flash-preview", "gemini-2.0-flash-exp"]
+    chosen, switched = select_preferred_model(models_only_preview)
+    assert chosen in models_only_preview
+    assert switched is True
+
 

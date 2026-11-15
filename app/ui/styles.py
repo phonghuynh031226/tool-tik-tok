@@ -14,7 +14,7 @@ DARK_THEME_QSS = f"""
 /* Global base settings */
 QWidget {{
     font-family: {tokens.FONT_FALLBACKS};
-    font-size: {tokens.FONT_SIZE_BASE}px;
+    font-size: 10pt;
     color: {tokens.TEXT_PRIMARY};
     background-color: transparent;
     selection-background-color: {tokens.PRIMARY};
@@ -505,7 +505,10 @@ QToolTip {{
 
 def apply_app_theme(app: QApplication) -> None:
     """Apply standard Segoe UI application font and dark stylesheet."""
-    font = QFont(tokens.FONT_FAMILY, tokens.FONT_SIZE_MD)
+    font = QFont(tokens.FONT_FAMILY, 10)
     font.setStyleHint(QFont.StyleHint.SansSerif)
+    app_inst = QApplication.instance()
+    if app_inst:
+        app_inst.setFont(font)
     app.setFont(font)
     app.setStyleSheet(DARK_THEME_QSS)

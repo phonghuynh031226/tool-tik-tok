@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Callable, List, Optional
 
-from PySide6.QtCore import QPoint, QPropertyAnimation, QRect, QSize, Qt, QTimer
+from PySide6.QtCore import QEvent, QObject, QPoint, QPropertyAnimation, QRect, QSize, Qt, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QPushButton,
@@ -14,6 +14,20 @@ from PySide6.QtWidgets import (
 from app.ui import icons, tokens
 from app.ui.components.buttons import AppButton
 
+DEFAULT_FALLBACK_TITLES = {
+    "error": "Thông báo lỗi",
+    "warning": "Cảnh báo tác vụ",
+    "info": "Thông báo",
+    "success": "Thành công",
+}
+
+DEFAULT_FALLBACK_MESSAGES = {
+    "error": "Đã xảy ra lỗi trong quá trình xử lý. Vui lòng kiểm tra lại hoặc thử lại sau.",
+    "warning": "Cảnh báo tác vụ. Vui lòng kiểm tra lại thông tin.",
+    "info": "Thông báo từ hệ thống ứng dụng.",
+    "success": "Thao tác đã được thực hiện thành công.",
+}
+
 
 class ToastNotification(QFrame):
     """A single floating, non-blocking toast alert."""
@@ -22,7 +36,7 @@ class ToastNotification(QFrame):
         self,
         toast_type: str,  # 'success', 'info', 'warning', 'error'
         title: str,
-        message: str,
+        message: str = "",
         action_text: Optional[str] = None,
         action_callback: Optional[Callable[[], None]] = None,
         duration_ms: int = 4500,
@@ -33,6 +47,18 @@ class ToastNotification(QFrame):
         self.toast_type = toast_type
         self.on_close_cb = on_close
         self.setFixedWidth(360)
+
+        # Sanitize title and message - ensure they are NEVER empty or placeholder dashes
+        clean_title = (title or "").strip()
+        if not clean_title or clean_title in ("—", "-", "--", "None"):
+            clean_title = DEFAULT_FALLBACK_TITLES.get(toast_type, "Thông báo")
+
+        clean_message = (message or "").strip()
+        if not clean_message or clean_message in ("—", "-", "--", "None"):
+            clean_message = DEFAULT_FALLBACK_MESSAGES.get(toast_type, "Thông báo từ hệ thống.")
+
+        self.title_text = clean_title
+        self.message_text = clean_message
 
         # Theme colors by type
         if toast_type == "success":
@@ -80,19 +106,18 @@ class ToastNotification(QFrame):
         content_box.setSpacing(4)
         content_box.setContentsMargins(0, 0, 0, 0)
 
-        lbl_title = QLabel(title, self)
-        lbl_title.setStyleSheet(
+        self.lbl_title = QLabel(self.title_text, self)
+        self.lbl_title.setStyleSheet(
             f"font-size: {tokens.FONT_SIZE_BASE}px; font-weight: 700; color: {tokens.TEXT_PRIMARY}; border: none; background: transparent;"
         )
-        content_box.addWidget(lbl_title)
+        content_box.addWidget(self.lbl_title)
 
-        if message:
-            lbl_msg = QLabel(message, self)
-            lbl_msg.setWordWrap(True)
-            lbl_msg.setStyleSheet(
-                f"font-size: {tokens.FONT_SIZE_SM}px; color: {tokens.TEXT_SECONDARY}; border: none; background: transparent;"
-            )
-            content_box.addWidget(lbl_msg)
+        self.lbl_msg = QLabel(self.message_text, self)
+        self.lbl_msg.setWordWrap(True)
+        self.lbl_msg.setStyleSheet(
+            f"font-size: {tokens.FONT_SIZE_SM}px; color: {tokens.TEXT_SECONDARY}; border: none; background: transparent;"
+        )
+        content_box.addWidget(self.lbl_msg)
 
         if action_text and action_callback:
             btn_action = AppButton(action_text, variant="primary", height=28, parent=self)
@@ -140,15 +165,23 @@ class ToastNotification(QFrame):
         self.deleteLater()
 
 
-class ToastManager:
-    """Manages positioning, stacking, and dismissal of multiple active toasts."""
+class ToastManager(QObject):
+    """Manages positioning, stacking, and dismissal of multiple active toasts pinned to bottom-right."""
 
     _instance: Optional[ToastManager] = None
 
     def __init__(self, parent_window: QWidget) -> None:
+        super().__init__(parent_window)
         self.window = parent_window
         self.toasts: List[ToastNotification] = []
         ToastManager._instance = self
+        if self.window is not None:
+            self.window.installEventFilter(self)
+
+    def eventFilter(self, watched, event: QEvent) -> bool:
+        if watched == self.window and event.type() in (QEvent.Type.Resize, QEvent.Type.Move):
+            self.reposition()
+        return super().eventFilter(watched, event)
 
     @classmethod
     def instance(cls) -> Optional[ToastManager]:
@@ -208,13 +241,14 @@ class ToastManager:
         margin_bottom = 24
         spacing = 10
 
-        win_rect = self.window.rect()
-        current_y = win_rect.height() - margin_bottom
+        win_w = self.window.width()
+        win_h = self.window.height()
+        current_y = win_h - margin_bottom
 
         for toast in reversed(self.toasts):
             t_height = toast.sizeHint().height()
             current_y -= t_height
-            toast_x = win_rect.width() - toast.width() - margin_right
-            toast.move(toast_x, current_y)
+            toast_x = max(10, win_w - toast.width() - margin_right)
+            toast.move(toast_x, max(10, current_y))
             toast.raise_()
             current_y -= spacing

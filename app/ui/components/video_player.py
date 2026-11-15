@@ -91,7 +91,16 @@ class VideoPlayerWidget(QWidget):
         is_offscreen = os.environ.get("QT_QPA_PLATFORM") == "offscreen" or (
             QGuiApplication.platformName() == "offscreen" if QGuiApplication.instance() else False
         )
-        if p.exists() and not is_offscreen:
+        is_valid_mp4 = False
+        if p.exists() and p.stat().st_size > 256:
+            try:
+                with open(p, "rb") as f:
+                    hdr = f.read(64)
+                    is_valid_mp4 = b"ftyp" in hdr
+            except Exception:
+                is_valid_mp4 = False
+
+        if p.exists() and not is_offscreen and is_valid_mp4:
             try:
                 self.player.setSource(QUrl.fromLocalFile(str(p.resolve())))
                 self.stack_layout.setCurrentWidget(self.video_widget)
@@ -103,6 +112,9 @@ class VideoPlayerWidget(QWidget):
                 self.btn_play_pause.setEnabled(True)
         else:
             # File might be a virtual fake in test or running in headless mode
+            self.placeholder.setText(f"Video: {p.name}")
+            self.stack_layout.setCurrentWidget(self.placeholder)
+            self.btn_play_pause.setEnabled(True)
             self.placeholder.setText(f"Video: {p.name}")
             self.stack_layout.setCurrentWidget(self.placeholder)
             self.btn_play_pause.setEnabled(True)

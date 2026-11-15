@@ -6,6 +6,7 @@ from app.ui.components.card import Card
 from app.ui.components.confirm_dialog import ConfirmDialog, UploadConfirmDialog
 from app.ui.components.empty_state import EmptyState
 from app.ui.components.labeled_input import LabeledInput
+from app.ui.components.schedule_picker import CustomCalendarPopup, SchedulePickerWidget
 from app.ui.components.stat_card import StatCard
 from app.ui.components.stepper import WorkflowStepper
 from app.ui.components.toast import ToastManager, ToastNotification
@@ -15,8 +16,10 @@ __all__ = [
     "AppButton",
     "Card",
     "ConfirmDialog",
+    "CustomCalendarPopup",
     "EmptyState",
     "LabeledInput",
+    "SchedulePickerWidget",
     "StatCard",
     "StatusBadge",
     "ToastManager",

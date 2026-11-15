@@ -336,6 +336,12 @@ class JobState(QObject):
         self._channel_id = val
         self.job_changed.emit()
 
+    def to_upload_request(self) -> Optional[UploadRequest]:
+        try:
+            return self.build_upload_request()
+        except Exception:
+            return None
+
     def build_upload_request(self) -> UploadRequest:
         """Create an UploadRequest based on current state."""
         ok, reason = self.can_upload()

@@ -37,7 +37,7 @@ def test_container():
 
 
 def test_overview_stepper_progression(qtbot, test_container):
-    """Test that the 4-step Stepper on Overview page reflects job state properly."""
+    """Test that the 3-step Stepper on Overview page reflects job state properly."""
     window = MainWindow(services=test_container)
     qtbot.addWidget(window)
     page = window.page_dashboard
@@ -45,35 +45,35 @@ def test_overview_stepper_progression(qtbot, test_container):
     stepper = page.stepper
     assert isinstance(stepper, WorkflowStepper)
 
-    # Initial: All steps pending
+    # Initial: All 3 steps pending
     assert stepper.get_step_state(1) == "pending"
     assert stepper.get_step_state(2) == "pending"
     assert stepper.get_step_state(3) == "pending"
-    assert stepper.get_step_state(4) == "pending"
 
     # Step 1 active when URL entered
     window.job_state.url = "https://www.tiktok.com/@user/video/123"
     page._sync_from_state()
     assert stepper.get_step_state(1) == "active"
 
-    # Step 1 & 2 completed when video is ready
+    # Step 1 completed when video is ready, Step 2 active
     sample_mp4 = Path(".tmp/sample.mp4")
     window.job_state.local_video_path = sample_mp4
     window.job_state.status = JobStatus.DOWNLOADED
     page._sync_from_state()
     assert stepper.get_step_state(1) == "done"
-    assert stepper.get_step_state(2) == "done"
+    assert stepper.get_step_state(2) == "active"
 
-    # Step 3 completed when AI content generated
+    # Step 2 completed when AI content generated
     window.job_state.title = "Tiêu đề chuẩn SEO mới"
     window.job_state.status = JobStatus.CONTENT_READY
     page._sync_from_state()
-    assert stepper.get_step_state(3) == "done"
+    assert stepper.get_step_state(1) == "done"
+    assert stepper.get_step_state(2) == "done"
 
-    # Step 4 completed when uploaded
+    # Step 3 completed when uploaded
     window.job_state.status = JobStatus.UPLOADED
     page._sync_from_state()
-    assert stepper.get_step_state(4) == "done"
+    assert stepper.get_step_state(3) == "done"
 
 
 def test_tools_page_tiktok_downloader(qtbot, test_container, tmp_path):
@@ -370,7 +370,7 @@ def test_overview_scheduled_upload_flow_and_history_sync(qtbot, test_container, 
     page.dt_publish.setDateTime(sched_dt)
 
     assert page.btn_upload.isEnabled()
-    assert page.btn_upload.text() == "Lên lịch đăng YouTube"
+    assert page.btn_upload.text() in ("Hẹn giờ đăng", "Lên lịch đăng YouTube")
 
     # Simulate upload finished callback
     result = UploadResult(

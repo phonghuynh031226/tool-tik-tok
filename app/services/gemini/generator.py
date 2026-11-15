@@ -152,14 +152,15 @@ def select_preferred_model(
     """Select preferred default model according to priority rules:
     - Never auto-select 'gemma' models.
     - Ignore models containing 'image' or 'imagen'.
-    - Highest priority: models containing 'flash-lite' (or 'lite'), ordered by highest version descending.
-    - Next priority: other models containing 'flash', ordered by highest version descending.
-    - Next priority: other 'gemini' models, ordered by highest version descending.
+    - Exclude models containing 'preview' or 'exp' from default selection (allow only if no stable model exists).
     - If saved_model is provided and exists in models, keep it (returns (saved_model, False)).
-    - If saved_model is not in models, switch to preferred model and return (model, True) to notify user.
+    - Highest priority: stable (non-preview, non-exp) 'flash-lite' / 'lite' models, ordered by highest version descending.
+    - Next priority: stable (non-preview, non-exp) 'flash' models, ordered by highest version descending.
+    - Next priority: other stable 'gemini' models, ordered by highest version descending.
+    - Fallback: when no stable model is available, use preview/exp models ordered by flash-lite > flash > gemini, and report to user.
     """
     if not models:
-        return "gemini-3.1-flash-lite", False
+        return "gemini-2.5-flash-lite", False
 
     # Filter out gemma and image models from automatic selection
     filtered = [
@@ -172,10 +173,22 @@ def select_preferred_model(
     if saved_model and saved_model in models:
         return saved_model, False
 
+    stable_pool = [
+        m for m in candidate_pool
+        if "preview" not in m.casefold() and "exp" not in m.casefold()
+    ]
+
+    is_preview_fallback = False
+    if stable_pool:
+        active_pool = stable_pool
+    else:
+        active_pool = candidate_pool
+        is_preview_fallback = any("preview" in m.casefold() or "exp" in m.casefold() for m in active_pool)
+
     # Priority 1: flash-lite (or lite) with highest version number
     p1 = [
         m
-        for m in candidate_pool
+        for m in active_pool
         if "flash" in m.casefold()
         and ("flash-lite" in m.casefold() or "lite" in m.casefold())
     ]
@@ -186,7 +199,7 @@ def select_preferred_model(
         # Priority 2: other flash models with highest version number
         p2 = [
             m
-            for m in candidate_pool
+            for m in active_pool
             if "flash" in m.casefold()
         ]
         if p2:
@@ -194,15 +207,15 @@ def select_preferred_model(
             chosen = p2[0]
         else:
             # Priority 3: other gemini models with highest version number
-            p3 = [m for m in candidate_pool if "gemini" in m.casefold()]
+            p3 = [m for m in active_pool if "gemini" in m.casefold()]
             if p3:
                 p3.sort(key=_extract_model_version, reverse=True)
                 chosen = p3[0]
             else:
-                chosen = candidate_pool[0]
+                chosen = active_pool[0]
 
-    # Did we have a saved_model that is no longer present?
-    switched = bool(saved_model and saved_model not in models)
+    # Did we have a saved_model that is no longer present or did we fallback to preview?
+    switched = bool((saved_model and saved_model not in models) or is_preview_fallback)
     return chosen, switched
 
 

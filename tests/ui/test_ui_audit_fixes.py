@@ -52,26 +52,24 @@ def test_sidebar_collapsed_no_stray_pipe(qtbot, test_container):
 
 
 def test_stepper_sequential_progression(qtbot, test_container):
-    """Step N cannot be 'done' unless Step N has data AND all steps < N are 'done'."""
+    """Step N cannot be 'done' unless Step N has data AND all steps < N are 'done' (3-step workflow)."""
     window = MainWindow(services=test_container)
     qtbot.addWidget(window)
     page = window.page_dashboard
 
-    # Initial state: no video, no title -> Step 1 pending, Step 2 pending, Step 3 pending, Step 4 pending
+    # Initial state: no video, no title -> Step 1 pending, Step 2 pending, Step 3 pending
     page._update_stepper_state()
     assert page.stepper.get_step_state(1) == "pending"
     assert page.stepper.get_step_state(2) == "pending"
     assert page.stepper.get_step_state(3) == "pending"
-    assert page.stepper.get_step_state(4) == "pending"
 
     # Inconsistent attempt: User injects AI title but video is NOT downloaded
     page.state.title = "Tiêu đề tuyệt vời"
     page._update_stepper_state()
-    # Step 3 MUST NOT be 'done' because Step 1 and 2 are not done!
+    # Step 2 MUST NOT be 'done' because Step 1 is not done!
     assert page.stepper.get_step_state(1) == "pending"
     assert page.stepper.get_step_state(2) == "pending"
     assert page.stepper.get_step_state(3) == "pending"
-    assert page.stepper.get_step_state(4) == "pending"
 
     # Now step 1 completes: video downloaded
     fake_video = Path(".tmp/test_stepper_video.mp4")
@@ -81,23 +79,23 @@ def test_stepper_sequential_progression(qtbot, test_container):
     page.state.status = JobStatus.DOWNLOADED
 
     page._update_stepper_state()
-    # Step 1 is done, Step 2 is done, Step 3 is pending (waiting for AI content)
+    # Step 1 is done, Step 2 is active (waiting for AI content), Step 3 is pending
     assert page.stepper.get_step_state(1) == "done"
-    assert page.stepper.get_step_state(2) == "done"
+    assert page.stepper.get_step_state(2) == "active"
     assert page.stepper.get_step_state(3) == "pending"
-    assert page.stepper.get_step_state(4) == "pending"
 
-    # Step 3 completes: AI content generated
+    # Step 2 completes: AI content generated
     page.state.status = JobStatus.CONTENT_READY
     page.state.description = "Mô tả hấp dẫn"
     page._update_stepper_state()
-    assert page.stepper.get_step_state(3) == "done"
-    assert page.stepper.get_step_state(4) == "pending"
+    assert page.stepper.get_step_state(1) == "done"
+    assert page.stepper.get_step_state(2) == "done"
+    assert page.stepper.get_step_state(3) == "pending"
 
-    # Step 4 completes upon upload
+    # Step 3 completes upon upload
     page.state.status = JobStatus.UPLOADED
     page._update_stepper_state()
-    assert page.stepper.get_step_state(4) == "done"
+    assert page.stepper.get_step_state(3) == "done"
 
 
 def test_account_card_actions(qtbot, test_container):

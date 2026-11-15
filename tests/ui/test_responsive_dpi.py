@@ -47,13 +47,13 @@ def main_window(qapp, test_container):
 
 
 def test_step_badge_circle_styles(main_window, qapp):
-    """Verify that step badges (1, 2, 3, 4) in Dashboard retain background color and size."""
+    """Verify that step badges (1, 2, 3) in Dashboard retain background color and size."""
     dash = main_window.page_dashboard
     assert isinstance(dash, DashboardPage)
 
     badges = dash.findChildren(QLabel, "")
     step_badges = [b for b in badges if b.property("class") == "stepBadge"]
-    assert len(step_badges) >= 4, f"Found {len(step_badges)} step badges, expected at least 4"
+    assert len(step_badges) >= 3, f"Found {len(step_badges)} step badges, expected at least 3"
 
     for b in step_badges:
         assert b.width() == 24

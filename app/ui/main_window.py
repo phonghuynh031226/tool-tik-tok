@@ -253,6 +253,11 @@ class MainWindow(QMainWindow):
         if hasattr(self, "toast_manager"):
             self.toast_manager.reposition()
 
+    def moveEvent(self, event) -> None:
+        super().moveEvent(event)
+        if hasattr(self, "toast_manager"):
+            self.toast_manager.reposition()
+
     def _update_sidebar_state(self, collapsed: bool) -> None:
         """Toggle sidebar between expanded and compact icon-only mode."""
         if collapsed:
@@ -349,8 +354,9 @@ class MainWindow(QMainWindow):
             self.notify("info", "Bắt đầu tải video", "Liên kết TikTok hợp lệ. Đang tiến hành tải video về máy...")
         elif status == JobStatus.CONTENT_READY.value:
             self.notify("success", "Tạo nội dung AI hoàn tất", "Tiêu đề, mô tả và thẻ tìm kiếm đã được tối ưu chuẩn SEO.")
-        elif status == JobStatus.FAILED.value and self.job_state.error_message:
-            self.notify("error", "Tác vụ thất bại", self.job_state.error_message)
+        elif status == JobStatus.FAILED.value:
+            err_msg = self.job_state.error_message or "Đã xảy ra lỗi trong quá trình xử lý tác vụ."
+            self.notify("error", "Tác vụ thất bại", err_msg)
 
     @Slot(str)
     def _on_video_ready(self, path: str) -> None:

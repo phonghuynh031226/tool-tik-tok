@@ -131,3 +131,30 @@ FONT_WEIGHT_NORMAL = 400
 FONT_WEIGHT_MEDIUM = 500
 FONT_WEIGHT_SEMIBOLD = 600
 FONT_WEIGHT_BOLD = 700
+
+# ==============================================================================
+# Localized Job Statuses
+# ==============================================================================
+
+JOB_STATUS_VIETNAMESE: dict[str, str] = {
+    "NEW": "Mới tạo",
+    "METADATA_OK": "Đã có thông tin",
+    "DOWNLOADING": "Đang tải video",
+    "DOWNLOADED": "Đã tải xong",
+    "GENERATING_CONTENT": "Đang tạo nội dung",
+    "CONTENT_READY": "Đã tạo nội dung",
+    "UPLOADING": "Đang tải lên",
+    "UPLOADED": "Đã tải lên",
+    "FAILED": "Thất bại",
+    "CANCELLED": "Đã hủy",
+    "SCHEDULED": "Đã hẹn giờ",
+    "DRY_RUN": "Đã chạy thử",
+}
+
+
+def format_job_status(status: object) -> str:
+    """Format any JobStatus enum, string or object into a user-friendly Vietnamese status."""
+    if not status:
+        return "Chưa bắt đầu"
+    val = getattr(status, "value", str(status))
+    return JOB_STATUS_VIETNAMESE.get(str(val), str(val))
