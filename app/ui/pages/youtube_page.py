@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.contracts import UploadRequest, UploadResult
-from app.ui.components import Card, UploadConfirmDialog
+from app.ui.components import AppButton, Card, UploadConfirmDialog
 from app.ui.services import ServiceContainer
 from app.ui.state import JobState, format_hashtags
 from app.workers.service_workers import DryRunResult
@@ -83,7 +83,7 @@ class YouTubePage(QWidget):
         info_box.addWidget(self.lbl_channel_id)
         ch_layout.addLayout(info_box, stretch=1)
 
-        self.btn_refresh = QPushButton("Làm mới kết nối", ch_card)
+        self.btn_refresh = AppButton("Làm mới kết nối", variant="ghost", icon_name="refresh", parent=ch_card)
         self.btn_refresh.clicked.connect(self._refresh_channel)
         ch_layout.addWidget(self.btn_refresh)
 
@@ -139,7 +139,7 @@ class YouTubePage(QWidget):
 
         # Dry-run checkbox
         self.chk_dry_run = QCheckBox(
-            "🧪 Chế độ chạy thử (Dry-run) - Chạy toàn bộ luồng nhưng không gọi tải lên YouTube thật",
+            "Chế độ chạy thử (Dry-run) - Chạy toàn bộ luồng nhưng không gọi tải lên YouTube thật",
             params_card,
         )
         self.chk_dry_run.setStyleSheet("color: #93c5fd;")
@@ -166,15 +166,13 @@ class YouTubePage(QWidget):
 
         # Upload Action Bar
         act_row = QHBoxLayout()
-        self.btn_upload = QPushButton("🚀 Tải lên YouTube", container)
-        self.btn_upload.setProperty("class", "primaryBtn")
+        self.btn_upload = AppButton("Tải lên YouTube", variant="primary", icon_name="upload", parent=container)
         self.btn_upload.setMinimumHeight(44)
         self.btn_upload.setEnabled(False)  # Locked until prerequisites met
         self.btn_upload.clicked.connect(self._on_upload)
         act_row.addWidget(self.btn_upload, stretch=1)
 
-        self.btn_cancel = QPushButton("Hủy quá trình đăng", container)
-        self.btn_cancel.setProperty("class", "dangerBtn")
+        self.btn_cancel = AppButton("Hủy quá trình đăng", variant="danger", icon_name="close-circle", parent=container)
         self.btn_cancel.setMinimumHeight(44)
         self.btn_cancel.setVisible(False)
         self.btn_cancel.clicked.connect(self._on_cancel)
@@ -197,7 +195,7 @@ class YouTubePage(QWidget):
         r_layout = QVBoxLayout(self.result_box)
         r_layout.setSpacing(8)
 
-        self.lbl_result_status = QLabel("✅ Tải lên thành công!")
+        self.lbl_result_status = QLabel("Tải lên thành công!")
         self.lbl_result_status.setStyleSheet("font-size: 15px; font-weight: 700; color: #ffffff;")
         r_layout.addWidget(self.lbl_result_status)
         self.lbl_upload_summary = QLabel(self.result_box)
@@ -210,11 +208,11 @@ class YouTubePage(QWidget):
         r_layout.addWidget(self.lbl_result_link)
 
         r_btns = QHBoxLayout()
-        self.btn_open = QPushButton("Mở xem trên YouTube", self.result_box)
+        self.btn_open = AppButton("Mở xem trên YouTube", variant="secondary", icon_name="open-in-new", parent=self.result_box)
         self.btn_open.clicked.connect(self._on_open_youtube)
         r_btns.addWidget(self.btn_open)
 
-        self.btn_copy = QPushButton("Sao chép liên kết", self.result_box)
+        self.btn_copy = AppButton("Sao chép liên kết", variant="secondary", icon_name="content-copy", parent=self.result_box)
         self.btn_copy.clicked.connect(self._on_copy_link)
         r_btns.addWidget(self.btn_copy)
         r_btns.addStretch()
@@ -320,9 +318,11 @@ class YouTubePage(QWidget):
         has_video = bool(self.state.local_video_path)
         self.btn_upload.setEnabled(title_ok and kids_ok and rights_ok and has_video and self.services.upload_enabled(self.state.dry_run) and self.state.can_upload()[0])
         if self.state.dry_run:
-            self.btn_upload.setText("🧪 Chạy thử đăng YouTube (Dry-run)")
+            self.btn_upload.setText("Chạy thử đăng YouTube (Dry-run)")
+            self.btn_upload.set_icon_name("flask")
         else:
-            self.btn_upload.setText("🚀 Tải lên YouTube")
+            self.btn_upload.setText("Tải lên YouTube")
+            self.btn_upload.set_icon_name("upload")
 
     @Slot()
     def _on_upload(self) -> None:
@@ -400,6 +400,18 @@ class YouTubePage(QWidget):
         except Exception:
             QMessageBox.warning(self, "Lịch sử", "Video đã đăng nhưng không lưu được lịch sử.")
 
+    def _notify(self, toast_type: str, title: str, message: str = "") -> None:
+        win = self.window()
+        if win and hasattr(win, "notify"):
+            win.notify(toast_type=toast_type, title=title, message=message)
+        else:
+            if toast_type in ("error", "critical"):
+                QMessageBox.critical(self, title, message)
+            elif toast_type == "warning":
+                QMessageBox.warning(self, title, message)
+            else:
+                QMessageBox.information(self, title, message)
+
     @Slot()
     def _on_cancel(self) -> None:
         if self._active_upload_worker:
@@ -412,7 +424,7 @@ class YouTubePage(QWidget):
         self.btn_cancel.setVisible(False)
         self.progress_bar.setVisible(False)
         self._active_upload_worker = None
-        QMessageBox.information(self, "Đã hủy", "Đã hủy quá trình đăng video.")
+        self._notify("info", "Đã hủy", "Đã hủy quá trình đăng video.")
 
     @Slot(str)
     def _on_error(self, err: str) -> None:
@@ -421,7 +433,7 @@ class YouTubePage(QWidget):
         self.btn_cancel.setVisible(False)
         self.progress_bar.setVisible(False)
         self._active_upload_worker = None
-        QMessageBox.critical(self, "Lỗi đăng video", f"Tải lên thất bại: {err}")
+        self._notify("error", "Lỗi đăng video", f"Tải lên thất bại: {err}")
 
     @Slot(object)
     def _on_upload_result(self, res: Optional[UploadResult]) -> None:
@@ -430,7 +442,7 @@ class YouTubePage(QWidget):
         self.result_box.setVisible(visible)
         if not visible:
             return
-        self.lbl_result_status.setText("Chạy thử hoàn tất, chưa đăng YouTube" if simulated else "✅ Đã đăng thành công lên YouTube!")
+        self.lbl_result_status.setText("Chạy thử hoàn tất, chưa đăng YouTube" if simulated else "Đã đăng thành công lên YouTube!")
         self.lbl_upload_summary.setText(res.summary if simulated else "")
         self.lbl_upload_summary.setVisible(simulated)
         self.lbl_result_link.setText("" if simulated else f"Liên kết: {res.url}")
@@ -447,5 +459,5 @@ class YouTubePage(QWidget):
     def _on_copy_link(self) -> None:
         if self.state.upload_result and self.state.upload_result.url:
             QGuiApplication.clipboard().setText(self.state.upload_result.url)
-            QMessageBox.information(self, "Đã sao chép", "Đã sao chép link YouTube.")
+            self._notify("info", "Đã sao chép", "Đã sao chép link YouTube.")
 

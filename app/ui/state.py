@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Optional
+from datetime import datetime
 import logging
 import re
 
@@ -62,6 +63,8 @@ class JobState(QObject):
         self._history_id: Optional[int] = None
         self._dry_run: bool = False
         self.dry_run_result = None
+        self._publish_at: Optional[datetime] = None
+        self._channel_id: Optional[str] = None
 
     # Properties
     @property
@@ -99,6 +102,24 @@ class JobState(QObject):
     @property
     def local_video_path(self) -> Optional[Path]:
         return self._local_video_path
+
+    @local_video_path.setter
+    def local_video_path(self, path: Optional[Path]) -> None:
+        if path is not None:
+            self.set_local_file(Path(path))
+        else:
+            self._local_video_path = None
+
+    @property
+    def video_path(self) -> Optional[Path]:
+        return self._local_video_path
+
+    @video_path.setter
+    def video_path(self, path: Optional[Path]) -> None:
+        if path is not None:
+            self.set_local_file(Path(path))
+        else:
+            self._local_video_path = None
 
     def set_download_result(self, result: DownloadResult) -> None:
         self._download_result = result
@@ -297,6 +318,24 @@ class JobState(QObject):
         hashtags = format_hashtags(self._hashtags)
         return self._description.strip() + ('\n\n' + hashtags if hashtags else '')
 
+    @property
+    def publish_at(self) -> Optional[datetime]:
+        return self._publish_at
+
+    @publish_at.setter
+    def publish_at(self, val: Optional[datetime]) -> None:
+        self._publish_at = val
+        self.job_changed.emit()
+
+    @property
+    def channel_id(self) -> Optional[str]:
+        return self._channel_id
+
+    @channel_id.setter
+    def channel_id(self, val: Optional[str]) -> None:
+        self._channel_id = val
+        self.job_changed.emit()
+
     def build_upload_request(self) -> UploadRequest:
         """Create an UploadRequest based on current state."""
         ok, reason = self.can_upload()
@@ -317,6 +356,8 @@ class JobState(QObject):
             privacy=self._privacy,
             made_for_kids=self._made_for_kids,
             rights_confirmed=self._rights_confirmed,
+            publish_at=self._publish_at,
+            channel_id=self._channel_id,
         )
 
     @property

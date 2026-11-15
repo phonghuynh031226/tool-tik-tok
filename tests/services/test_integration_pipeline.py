@@ -47,9 +47,7 @@ def test_real_services_mock_end_to_end(sdk, setup_service, tmp_path, qtbot, monk
         channel = youtube.get_channel()
         youtube.confirm_upload(req, made_for_kids=False, channel_id=channel.id)
         result = youtube.upload(req, lambda p: None, CancelToken())
-        from app.ui.pages.youtube_page import YouTubePage
-        page = window.findChild(YouTubePage)
-        page._on_finished(result)
+        window.page_dashboard._on_upload_finished(result)
         record = history.find_by_video_id(meta.video_id)
         assert record['youtube_video_id'] == result.video_id
         assert record['youtube_title'] == content.title

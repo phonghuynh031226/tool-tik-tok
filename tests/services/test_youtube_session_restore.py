@@ -126,7 +126,7 @@ def test_window_without_token_remains_disconnected(saved_session, qtbot):
     qtbot.waitUntil(lambda: container.connection._restore_started and not container.connection.busy, timeout=3000)
     assert 'Chưa kết nối' in window.page_settings.lbl_yt_channel_name.text()
     assert container.connection.channel is None
-    assert not window.page_youtube.btn_upload.isEnabled()
+    assert not window.page_dashboard.btn_upload.isEnabled()
     browser.assert_not_called()
 
 

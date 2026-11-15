@@ -2,8 +2,11 @@
 
 from app.workers.base import TaskWorker, WorkerSignals
 from app.workers.service_workers import (
-    DownloadVideoWorker, FetchMetaWorker, GenerateContentWorker,
-    UploadYouTubeWorker, YouTubeConnectWorker, YtDlpUpdateWorker,
+    AddAccountWorker, DownloadVideoWorker, FetchAccountsWorker,
+    FetchChannelStatsWorker, FetchChannelVideosWorker, FetchMetaWorker,
+    GenerateContentWorker, RemoveAccountWorker, SetDefaultAccountWorker,
+    SyncScheduledWorker, UploadYouTubeWorker, YouTubeConnectWorker,
+    YouTubeRestoreWorker, YtDlpUpdateWorker,
 )
 
 __all__ = [
@@ -14,6 +17,14 @@ __all__ = [
     'GenerateContentWorker',
     'UploadYouTubeWorker',
     'YouTubeConnectWorker',
+    'YouTubeRestoreWorker',
     'YtDlpUpdateWorker',
+    'FetchAccountsWorker',
+    'AddAccountWorker',
+    'RemoveAccountWorker',
+    'SetDefaultAccountWorker',
+    'FetchChannelStatsWorker',
+    'FetchChannelVideosWorker',
+    'SyncScheduledWorker',
 ]
 

@@ -2,6 +2,7 @@
 
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # Ensure project root is in sys.path
@@ -9,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QApplication, QScrollArea
+from PySide6.QtWidgets import QApplication, QScrollArea, QTabWidget
 
 from app.contracts import GeneratedContent, JobStatus, UploadRequest, VideoMeta
 from app.ui.components import UploadConfirmDialog
@@ -84,17 +85,19 @@ def capture_all_screenshots():
     window.job_state.made_for_kids = False
 
     pages = [
-        ("dashboard", 0),
-        ("tiktok", 1),
-        ("ai", 2),
-        ("youtube", 3),
-        ("history", 4),
-        ("settings", 5),
+        ("dashboard", 0, None),
+        ("tools_tiktok", 1, 0),
+        ("tools_ai", 1, 1),
+        ("youtube_channels", 2, None),
+        ("history_list", 3, 0),
+        ("history_scheduled", 3, 1),
+        ("settings", 4, None),
     ]
 
     resolutions = [
-        ("1080p", 1920, 1080),
-        ("720p", 1280, 720),
+        ("1920x1080", 1920, 1080),
+        ("1366x768", 1366, 768),
+        ("1000x640", 1000, 640),
     ]
 
     captured_files = []
@@ -104,9 +107,16 @@ def capture_all_screenshots():
         window.show()
         app.processEvents()
 
-        for page_name, idx in pages:
+        for page_name, idx, tab_idx in pages:
             window.stack.setCurrentIndex(idx)
             app.processEvents()
+
+            if tab_idx is not None:
+                widget = window.stack.widget(idx)
+                tab_widget = widget.findChild(QTabWidget)
+                if tab_widget:
+                    tab_widget.setCurrentIndex(tab_idx)
+                    app.processEvents()
 
             # Render grab
             pixmap = window.grab()
@@ -180,6 +190,51 @@ def capture_all_screenshots():
         captured_files.append(dlg_dry_path)
         print(f"Captured: {dlg_dry_path.name}")
         dialog_dry.close()
+
+        # Capture Step 4 specifically: Immediate mode
+        window.stack.setCurrentIndex(0)
+        window.page_dashboard.radio_publish_now.setChecked(True)
+        window.page_dashboard.scroll_area.ensureWidgetVisible(window.page_dashboard.step4_card)
+        app.processEvents()
+        step4_imm_pixmap = window.page_dashboard.step4_card.grab()
+        step4_imm_path = out_dir / f"step4_immediate_{res_name}.png"
+        step4_imm_pixmap.save(str(step4_imm_path), "PNG")
+        captured_files.append(step4_imm_path)
+        print(f"Captured: {step4_imm_path.name}")
+
+        # Capture Step 4 specifically: Scheduled mode
+        window.page_dashboard.radio_publish_schedule.setChecked(True)
+        sched_time = datetime.now() + timedelta(hours=2)
+        sched_time = sched_time.replace(minute=(sched_time.minute // 5) * 5, second=0, microsecond=0)
+        window.page_dashboard.dt_publish.setDateTime(sched_time)
+        window.page_dashboard.scroll_area.ensureWidgetVisible(window.page_dashboard.step4_card)
+        app.processEvents()
+        step4_sched_pixmap = window.page_dashboard.step4_card.grab()
+        step4_sched_path = out_dir / f"step4_scheduled_{res_name}.png"
+        step4_sched_pixmap.save(str(step4_sched_path), "PNG")
+        captured_files.append(step4_sched_path)
+        print(f"Captured: {step4_sched_path.name}")
+
+        # Capture Confirmation Dialog (Scheduled)
+        req_sched = UploadRequest(
+            path=Path(".tmp/downloads/demo.mp4"),
+            title=window.job_state.title,
+            description=window.job_state.description,
+            tags=window.job_state.tags,
+            privacy="private",
+            made_for_kids=False,
+            rights_confirmed=True,
+            publish_at=datetime.now(timezone.utc) + timedelta(hours=2),
+        )
+        dlg_sched = UploadConfirmDialog(req_sched, "Kênh mẫu DEV/TEST", "fake-channel-dev", window, dry_run=False)
+        dlg_sched.show()
+        app.processEvents()
+        dlg_sched_pixmap = dlg_sched.grab()
+        dlg_sched_path = out_dir / f"confirm_dialog_scheduled_{res_name}.png"
+        dlg_sched_pixmap.save(str(dlg_sched_path), "PNG")
+        captured_files.append(dlg_sched_path)
+        print(f"Captured: {dlg_sched_path.name}")
+        dlg_sched.close()
 
     print(f"\nAll {len(captured_files)} screenshots captured successfully in {out_dir}")
     return 0
