@@ -227,9 +227,11 @@ class SettingsPage(QWidget):
 
         # Notice guiding user to YouTube Channels page
         note_box = QFrame(yt_card)
+        note_box.setObjectName("ytNoteBox")
         note_box.setStyleSheet(
-            f"background-color: {tokens.BG_CARD_HOVER}; border: 1px solid {tokens.BORDER_SUBTLE}; "
-            f"border-radius: {tokens.RADIUS_MD}px; padding: 12px;"
+            f"QFrame#ytNoteBox {{ background-color: {tokens.BG_CARD_HOVER}; border: 1px solid {tokens.BORDER_SUBTLE}; "
+            f"border-radius: {tokens.RADIUS_MD}px; padding: 12px; }}"
+            f"QFrame#ytNoteBox QLabel {{ border: none; background: transparent; }}"
         )
         note_layout = QHBoxLayout(note_box)
         note_layout.setSpacing(12)

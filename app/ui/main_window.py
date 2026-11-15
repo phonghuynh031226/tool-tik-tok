@@ -114,7 +114,7 @@ class MainWindow(QMainWindow):
             ("nav_dashboard", "Tổng quan", 0),
             ("nav_tools", "Công cụ", 1),
             ("nav_youtube", "Kênh YouTube", 2),
-            ("nav_history", "Lịch sử & Lịch đăng", 3),
+            ("nav_history", "Lịch sử && Lịch đăng", 3),
             ("nav_settings", "Cài đặt", 4),
         ]
 
@@ -135,6 +135,7 @@ class MainWindow(QMainWindow):
         self.footer_brand_row.setSpacing(tokens.SPACE_SM)
 
         self.lbl_footer_logo = QLabel(self.footer_frame)
+        self.lbl_footer_logo.setFixedSize(18, 18)
         self.lbl_footer_logo.setPixmap(icons.get_colored_icon("logo", tokens.TEXT_SECONDARY).pixmap(18, 18))
         self.footer_brand_row.addWidget(self.lbl_footer_logo)
 
@@ -258,13 +259,12 @@ class MainWindow(QMainWindow):
             self.sidebar.setFixedWidth(tokens.SIDEBAR_WIDTH_COLLAPSED)
             self.lbl_logo_title.setVisible(False)
             self.lbl_sub.setVisible(False)
-            self.lbl_footer_title.setVisible(False)
-            self.lbl_footer_version.setVisible(False)
+            self.footer_frame.setVisible(False)
             self.header_frame.setContentsMargins(0, 0, 0, tokens.SPACE_MD)
 
             for btn, icon_name, label_text in self._nav_items:
                 btn.setText("")
-                btn.setToolTip(label_text)
+                btn.setToolTip(label_text.replace("&&", "&"))
                 btn.setProperty("class", "navBtnCollapsed")
                 btn.style().unpolish(btn)
                 btn.style().polish(btn)
@@ -272,8 +272,7 @@ class MainWindow(QMainWindow):
             self.sidebar.setFixedWidth(tokens.SIDEBAR_WIDTH_EXPANDED)
             self.lbl_logo_title.setVisible(True)
             self.lbl_sub.setVisible(True)
-            self.lbl_footer_title.setVisible(True)
-            self.lbl_footer_version.setVisible(True)
+            self.footer_frame.setVisible(True)
             self.header_frame.setContentsMargins(tokens.SPACE_SM, 0, tokens.SPACE_SM, tokens.SPACE_MD)
 
             for btn, icon_name, label_text in self._nav_items:

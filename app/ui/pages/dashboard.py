@@ -141,8 +141,10 @@ class DashboardPage(QWidget):
 
         # TikTok Meta Info Preview Box
         self.tiktok_meta_box = QFrame(self.step1_card)
+        self.tiktok_meta_box.setObjectName("tiktokMetaBox")
         self.tiktok_meta_box.setStyleSheet(
-            "background-color: #12141e; border: 1px solid #232736; border-radius: 8px; padding: 10px;"
+            "QFrame#tiktokMetaBox { background-color: #12141e; border: 1px solid #232736; border-radius: 8px; padding: 10px; }"
+            "QFrame#tiktokMetaBox QLabel { border: none; background: transparent; }"
         )
         self.tiktok_meta_box.setVisible(False)
         meta_layout = QGridLayout(self.tiktok_meta_box)
@@ -300,8 +302,10 @@ class DashboardPage(QWidget):
 
         # Connected Channel display
         self.channel_box = QFrame(self.step4_card)
+        self.channel_box.setObjectName("channelBox")
         self.channel_box.setStyleSheet(
-            "background-color: #12141e; border: 1px solid #232736; border-radius: 8px; padding: 12px;"
+            "QFrame#channelBox { background-color: #12141e; border: 1px solid #232736; border-radius: 8px; padding: 12px; }"
+            "QFrame#channelBox QLabel { border: none; background: transparent; }"
         )
         ch_layout = QHBoxLayout(self.channel_box)
         ch_layout.setContentsMargins(8, 8, 8, 8)
@@ -363,8 +367,10 @@ class DashboardPage(QWidget):
 
         # Schedule Container (Hidden by default until 'Hẹn giờ công khai' is chosen)
         self.schedule_container = QFrame(self.step4_card)
+        self.schedule_container.setObjectName("scheduleBox")
         self.schedule_container.setStyleSheet(
-            "background-color: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 10px;"
+            "QFrame#scheduleBox { background-color: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 10px; }"
+            "QFrame#scheduleBox QLabel { border: none; background: transparent; }"
         )
         self.schedule_container.setVisible(False)
         sc_layout = QVBoxLayout(self.schedule_container)
@@ -495,8 +501,10 @@ class DashboardPage(QWidget):
 
         # Upload Result Box
         self.upload_result_box = QFrame(self.step4_card)
+        self.upload_result_box.setObjectName("uploadResultBox")
         self.upload_result_box.setStyleSheet(
-            "background-color: #064e3b; border: 1px solid #059669; border-radius: 8px; padding: 12px;"
+            "QFrame#uploadResultBox { background-color: #064e3b; border: 1px solid #059669; border-radius: 8px; padding: 12px; }"
+            "QFrame#uploadResultBox QLabel { border: none; background: transparent; }"
         )
         self.upload_result_box.setVisible(False)
         res_layout = QVBoxLayout(self.upload_result_box)
@@ -705,41 +713,94 @@ class DashboardPage(QWidget):
         self._update_stepper_state()
 
     def _update_stepper_state(self) -> None:
+        """Update workflow stepper states strictly enforcing sequential progression.
+
+        Sequential Progression Rule:
+        Step N is marked 'done' (Hoàn thành) IF AND ONLY IF:
+          1. Step N has valid output data, AND
+          2. Every preceding step 1..(N-1) is also 'done'.
+
+        A step cannot be 'done' if any earlier step is 'pending' or 'active'.
+        This mathematically prevents inconsistent states like:
+        - Step 1 'active', Step 2 'pending', Step 3 'done'.
+        """
         if not hasattr(self, "stepper"):
             return
-        # Step 1: Nguồn Video
-        if self._active_download_worker is not None:
-            self.stepper.set_step_state(1, "active")
-        elif self.state.video_path or self.state.status in (
-            JobStatus.DOWNLOADED, JobStatus.CONTENT_READY, JobStatus.UPLOADING, JobStatus.UPLOADED, JobStatus.SCHEDULED
-        ):
+
+        # -------------------------------------------------------------
+        # Step 1: Nguồn Video (TikTok URL / File MP4)
+        # -------------------------------------------------------------
+        step1_has_data = (
+            (bool(self.state.local_video_path) and self.state.local_video_path.exists())
+            or (bool(self.state.video_path) and self.state.status in (
+                JobStatus.DOWNLOADED, JobStatus.CONTENT_READY, JobStatus.UPLOADING, JobStatus.UPLOADED, JobStatus.SCHEDULED
+            ))
+        )
+        step1_done = step1_has_data
+
+        if step1_done:
             self.stepper.set_step_state(1, "done")
+        elif self._active_download_worker is not None:
+            self.stepper.set_step_state(1, "active")
         elif self.state.url or self.state.meta:
             self.stepper.set_step_state(1, "active")
         else:
             self.stepper.set_step_state(1, "pending")
 
-        # Step 2: Xem trước
-        if self.state.video_path:
+        # -------------------------------------------------------------
+        # Step 2: Xem trước (Video Player Preview)
+        # -------------------------------------------------------------
+        # Step 2 can ONLY be 'done' if Step 1 is done and video is available
+        step2_has_data = bool(self.state.local_video_path or self.state.video_path)
+        step2_done = step1_done and step2_has_data
+
+        if step2_done:
             self.stepper.set_step_state(2, "done")
+        elif step1_done:
+            self.stepper.set_step_state(2, "active")
         else:
             self.stepper.set_step_state(2, "pending")
 
-        # Step 3: Tối ưu AI
-        if getattr(self, "_active_ai_worker", None) is not None:
-            self.stepper.set_step_state(3, "active")
-        elif (self.state.title and self.state.title != (self.state.meta.title if self.state.meta else "")) or self.state.status in (
-            JobStatus.CONTENT_READY, JobStatus.UPLOADING, JobStatus.UPLOADED, JobStatus.SCHEDULED
-        ):
+        # -------------------------------------------------------------
+        # Step 3: Tối ưu AI (Title, Description, Tags)
+        # -------------------------------------------------------------
+        # Step 3 can ONLY be 'done' if Step 1 AND Step 2 are done AND AI content exists
+        step3_has_data = (
+            bool(self.state.title and self.state.title.strip())
+            and (
+                self.state.status in (
+                    JobStatus.CONTENT_READY, JobStatus.UPLOADING, JobStatus.UPLOADED, JobStatus.SCHEDULED
+                )
+                or bool(self.state.description)
+                or (self.state.meta is not None and self.state.title != self.state.meta.title)
+            )
+        )
+        step3_done = step1_done and step2_done and step3_has_data
+
+        if step3_done:
             self.stepper.set_step_state(3, "done")
+        elif step1_done and step2_done:
+            if getattr(self, "_active_ai_worker", None) is not None:
+                self.stepper.set_step_state(3, "active")
+            else:
+                self.stepper.set_step_state(3, "pending")
         else:
             self.stepper.set_step_state(3, "pending")
 
-        # Step 4: Xuất bản YouTube
-        if self._active_upload_worker is not None or self.state.status == JobStatus.UPLOADING:
-            self.stepper.set_step_state(4, "active")
-        elif self.state.status in (JobStatus.UPLOADED, JobStatus.SCHEDULED):
+        # -------------------------------------------------------------
+        # Step 4: Xuất bản YouTube (Upload / Schedule)
+        # -------------------------------------------------------------
+        # Step 4 can ONLY be 'done' if Steps 1, 2, AND 3 are done AND upload succeeded/scheduled
+        step4_has_data = self.state.status in (JobStatus.UPLOADED, JobStatus.SCHEDULED)
+        step4_done = step1_done and step2_done and step3_done and step4_has_data
+
+        if step4_done:
             self.stepper.set_step_state(4, "done")
+        elif step1_done and step2_done and step3_done:
+            if self._active_upload_worker is not None or self.state.status == JobStatus.UPLOADING:
+                self.stepper.set_step_state(4, "active")
+            else:
+                self.stepper.set_step_state(4, "pending")
         else:
             self.stepper.set_step_state(4, "pending")
 

@@ -21,6 +21,22 @@ QWidget {{
     selection-color: {tokens.TEXT_INVERTED};
 }}
 
+/* Prevent QFrame stylesheet rules from leaking borders onto child QLabels */
+QLabel {{
+    border: none;
+    background-color: transparent;
+}}
+
+QFrame.card QLabel {{
+    border: none;
+    background-color: transparent;
+}}
+
+QFrame.statCard QLabel {{
+    border: none;
+    background-color: transparent;
+}}
+
 QMainWindow, QWidget#centralWidget, QDialog {{
     background-color: {tokens.BG_APP};
 }}
@@ -142,6 +158,7 @@ QLabel.stepBadge {{
     font-weight: {tokens.FONT_WEIGHT_BOLD};
     font-size: {tokens.FONT_SIZE_SM}px;
     border-radius: 12px;
+    border: none;
     min-width: 24px;
     max-width: 24px;
     min-height: 24px;
@@ -153,11 +170,15 @@ QLabel.stepTitle {{
     font-size: {tokens.FONT_SIZE_LG}px;
     font-weight: {tokens.FONT_WEIGHT_SEMIBOLD};
     color: {tokens.TEXT_PRIMARY};
+    border: none;
+    background-color: transparent;
 }}
 
 QLabel.stepDesc {{
     font-size: {tokens.FONT_SIZE_SM}px;
     color: {tokens.TEXT_SECONDARY};
+    border: none;
+    background-color: transparent;
 }}
 
 /* Buttons */

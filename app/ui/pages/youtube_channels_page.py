@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from PySide6.QtCore import QThreadPool, QUrl, Qt, Slot
+from PySide6.QtCore import QThreadPool, QUrl, Qt, Signal, Slot
 from PySide6.QtGui import QColor, QDesktopServices, QPainter
 from PySide6.QtWidgets import (
     QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
@@ -29,7 +29,12 @@ from app.workers import (
 
 
 class AccountCardWidget(QFrame):
-    """Clickable card displaying account thumbnail/avatar, title and status."""
+    """Clickable card displaying account thumbnail/avatar, title, status and per-account actions."""
+
+    set_default_requested = Signal(object)
+    reconnect_requested = Signal(object)
+    remove_requested = Signal(object)
+    selected = Signal(object)
 
     def __init__(
         self,
@@ -40,13 +45,14 @@ class AccountCardWidget(QFrame):
         super().__init__(parent)
         self.account = account
         self.is_selected = is_selected
+        self.setObjectName("accountCard")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self._init_ui()
         self.update_selection(is_selected)
 
     def _init_ui(self) -> None:
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setContentsMargins(14, 10, 14, 10)
         layout.setSpacing(12)
 
         # Avatar initial
@@ -61,7 +67,7 @@ class AccountCardWidget(QFrame):
         bg_col = palette[color_val]
         self.lbl_avatar.setStyleSheet(
             f"background-color: {bg_col}; color: #ffffff; border-radius: 20px; "
-            f"font-weight: 700; font-size: 16px;"
+            f"font-weight: 700; font-size: 16px; border: none;"
         )
         layout.addWidget(self.lbl_avatar)
 
@@ -73,17 +79,17 @@ class AccountCardWidget(QFrame):
         title_row = QHBoxLayout()
         title_row.setSpacing(6)
         self.lbl_title = QLabel(self.account.title or "Kênh YouTube", self)
-        self.lbl_title.setStyleSheet(f"font-size: 14px; font-weight: 600; color: {tokens.TEXT_PRIMARY};")
+        self.lbl_title.setStyleSheet(f"font-size: 14px; font-weight: 600; color: {tokens.TEXT_PRIMARY}; border: none; background: transparent;")
         title_row.addWidget(self.lbl_title)
 
         if self.account.is_default:
-            badge_def = StatusBadge(status="Mặc định", badge_type="info", parent=self)
-            title_row.addWidget(badge_def)
+            self.badge_def = StatusBadge(status="Mặc định", badge_type="info", parent=self)
+            title_row.addWidget(self.badge_def)
         title_row.addStretch()
         info_col.addLayout(title_row)
 
         self.lbl_id = QLabel(f"ID: {self.account.id}", self)
-        self.lbl_id.setStyleSheet(f"font-size: 11px; color: {tokens.TEXT_MUTED};")
+        self.lbl_id.setStyleSheet(f"font-size: 11px; color: {tokens.TEXT_MUTED}; border: none; background: transparent;")
         info_col.addWidget(self.lbl_id)
 
         layout.addLayout(info_col, stretch=1)
@@ -96,14 +102,42 @@ class AccountCardWidget(QFrame):
         self.status_badge = StatusBadge(status=badge_text, badge_type=badge_type, parent=self)
         layout.addWidget(self.status_badge)
 
+        # Integrated per-account action buttons
+        actions_row = QHBoxLayout()
+        actions_row.setSpacing(6)
+
+        # "Đăng nhập lại" only visible when expired
+        self.btn_card_reconnect = AppButton("Đăng nhập lại", variant="ghost", icon_name="refresh", parent=self)
+        self.btn_card_reconnect.setVisible(self.account.status == "expired")
+        self.btn_card_reconnect.clicked.connect(lambda: self.reconnect_requested.emit(self.account))
+        actions_row.addWidget(self.btn_card_reconnect)
+
+        # "Đặt làm mặc định" hidden when account is already default
+        self.btn_card_set_default = AppButton("Đặt làm mặc định", variant="secondary", icon_name="check", parent=self)
+        self.btn_card_set_default.setVisible(not self.account.is_default)
+        self.btn_card_set_default.clicked.connect(lambda: self.set_default_requested.emit(self.account))
+        actions_row.addWidget(self.btn_card_set_default)
+
+        # "Xóa tài khoản"
+        self.btn_card_remove = AppButton("Xóa", variant="danger", icon_name="delete", parent=self)
+        self.btn_card_remove.clicked.connect(lambda: self.remove_requested.emit(self.account))
+        actions_row.addWidget(self.btn_card_remove)
+
+        layout.addLayout(actions_row)
+
+    def mousePressEvent(self, event) -> None:
+        super().mousePressEvent(event)
+        self.selected.emit(self.account)
+
     def update_selection(self, selected: bool) -> None:
         self.is_selected = selected
         border_col = tokens.COLOR_PRIMARY if selected else tokens.BORDER_SUBTLE
         bg_col = tokens.BG_CARD_HOVER if selected else tokens.BG_CARD
         self.setStyleSheet(
-            f"AccountCardWidget {{ background-color: {bg_col}; border: 1.5px solid {border_col}; "
+            f"QFrame#accountCard {{ background-color: {bg_col}; border: 1.5px solid {border_col}; "
             f"border-radius: {tokens.RADIUS_MD}px; }}"
-            f"AccountCardWidget:hover {{ border-color: {tokens.COLOR_PRIMARY_HOVER}; }}"
+            f"QFrame#accountCard:hover {{ border-color: {tokens.COLOR_PRIMARY_HOVER}; }}"
+            f"QFrame#accountCard QLabel {{ border: none; background: transparent; }}"
         )
 
 
@@ -160,7 +194,7 @@ class YouTubeChannelsPage(QWidget):
         head_info.addWidget(head_sub)
         head_row.addLayout(head_info, stretch=1)
 
-        self.btn_add_account = AppButton("Thêm tài khoản", variant="primary", icon_name="paste", parent=container)
+        self.btn_add_account = AppButton("Thêm tài khoản", variant="primary", icon_name="user-add", parent=container)
         self.btn_add_account.clicked.connect(self._on_add_account)
         head_row.addWidget(self.btn_add_account)
 
@@ -186,9 +220,16 @@ class YouTubeChannelsPage(QWidget):
         self.accounts_container.setSpacing(8)
         acc_layout.addLayout(self.accounts_container)
 
-        # Action bar for selected account
-        self.acc_actions_bar = QHBoxLayout()
+        # Action bar for selected account with clear target indicator
+        self.acc_actions_widget = QWidget(self.card_accounts)
+        self.acc_actions_bar = QHBoxLayout(self.acc_actions_widget)
+        self.acc_actions_bar.setContentsMargins(0, 4, 0, 0)
         self.acc_actions_bar.setSpacing(8)
+
+        self.lbl_selected_acc_target = QLabel("", self.acc_actions_widget)
+        self.lbl_selected_acc_target.setStyleSheet(f"font-size: 12px; color: {tokens.TEXT_SECONDARY}; border: none; background: transparent;")
+        self.acc_actions_bar.addWidget(self.lbl_selected_acc_target)
+        self.acc_actions_bar.addStretch()
 
         self.btn_set_default = AppButton("Đặt làm mặc định", variant="secondary", icon_name="check", parent=self.card_accounts)
         self.btn_set_default.clicked.connect(self._on_set_default)
@@ -202,8 +243,7 @@ class YouTubeChannelsPage(QWidget):
         self.btn_remove_account.clicked.connect(self._on_remove_account)
         self.acc_actions_bar.addWidget(self.btn_remove_account)
 
-        self.acc_actions_bar.addStretch()
-        acc_layout.addLayout(self.acc_actions_bar)
+        acc_layout.addWidget(self.acc_actions_widget)
 
         self.card_accounts.add_layout(acc_layout)
         layout.addWidget(self.card_accounts)
@@ -328,6 +368,8 @@ class YouTubeChannelsPage(QWidget):
             acc_list = []
 
         if not acc_list:
+            if hasattr(self, "acc_actions_widget"):
+                self.acc_actions_widget.setVisible(False)
             empty = EmptyState(
                 icon_name="youtube",
                 title="Chưa có tài khoản, hãy thêm tài khoản YouTube",
@@ -349,17 +391,35 @@ class YouTubeChannelsPage(QWidget):
 
         for acc in acc_list:
             card = AccountCardWidget(acc, is_selected=(acc.id == default_acc.id), parent=self.card_accounts)
-            card.mousePressEvent = lambda e, a=acc: self._select_account(a)
+            card.selected.connect(self._select_account)
+            card.set_default_requested.connect(self._on_set_default_for_account)
+            card.reconnect_requested.connect(self._on_reconnect_for_account)
+            card.remove_requested.connect(self._on_remove_account_for_account)
             self.accounts_container.addWidget(card)
             self._card_widgets.append(card)
 
+        self._update_action_bar_state()
         self._load_channel_data(force_refresh=False)
 
     def _select_account(self, account: ChannelAccount) -> None:
         self._selected_account = account
         for c in self._card_widgets:
-            c.update_selection(c.account.id == account.id)
+            if hasattr(c, "account"):
+                c.update_selection(c.account.id == account.id)
+        self._update_action_bar_state()
         self._load_channel_data(force_refresh=False)
+
+    def _update_action_bar_state(self) -> None:
+        if not hasattr(self, "acc_actions_widget"):
+            return
+        if not self._selected_account:
+            self.acc_actions_widget.setVisible(False)
+            return
+        self.acc_actions_widget.setVisible(True)
+        self.lbl_selected_acc_target.setText(f"Thao tác cho tài khoản đang chọn: <b>{self._selected_account.title}</b>")
+        self.btn_set_default.setVisible(not self._selected_account.is_default)
+        self.btn_reconnect.setVisible(self._selected_account.status == "expired")
+        self.btn_remove_account.setVisible(True)
 
     def _load_channel_data(self, force_refresh: bool = False) -> None:
         if not self._selected_account:
@@ -452,18 +512,22 @@ class YouTubeChannelsPage(QWidget):
 
     @Slot()
     def _on_set_default(self) -> None:
-        if not self._selected_account:
-            return
+        if self._selected_account:
+            self._on_set_default_for_account(self._selected_account)
+
+    def _on_set_default_for_account(self, account: ChannelAccount) -> None:
         self.progress_bar.setVisible(True)
-        worker = SetDefaultAccountWorker(self.services.youtube, self._selected_account.id)
+        worker = SetDefaultAccountWorker(self.services.youtube, account.id)
         worker.signals.finished.connect(lambda ch_id: self._load_accounts())
         worker.signals.error.connect(self._on_op_error)
         self.thread_pool.start(worker)
 
     @Slot()
     def _on_reconnect(self) -> None:
-        if not self._selected_account:
-            return
+        if self._selected_account:
+            self._on_reconnect_for_account(self._selected_account)
+
+    def _on_reconnect_for_account(self, account: ChannelAccount) -> None:
         self.progress_bar.setVisible(True)
         worker = AddAccountWorker(self.services.youtube)
         worker.signals.finished.connect(lambda acc: self._load_accounts())
@@ -472,12 +536,13 @@ class YouTubeChannelsPage(QWidget):
 
     @Slot()
     def _on_remove_account(self) -> None:
-        if not self._selected_account:
-            return
+        if self._selected_account:
+            self._on_remove_account_for_account(self._selected_account)
 
+    def _on_remove_account_for_account(self, account: ChannelAccount) -> None:
         dialog = ConfirmDialog(
             title="Xác nhận xóa tài khoản",
-            message=f"Bạn có chắc chắn muốn ngắt kết nối và xóa tài khoản '{self._selected_account.title}' không?",
+            message=f"Bạn có chắc chắn muốn ngắt kết nối và xóa tài khoản '{account.title}' không?",
             confirm_text="Xóa tài khoản",
             cancel_text="Hủy",
             is_danger=True,
@@ -486,7 +551,7 @@ class YouTubeChannelsPage(QWidget):
         )
         if dialog.exec() == ConfirmDialog.DialogCode.Accepted:
             self.progress_bar.setVisible(True)
-            worker = RemoveAccountWorker(self.services.youtube, self._selected_account.id)
+            worker = RemoveAccountWorker(self.services.youtube, account.id)
             worker.signals.finished.connect(lambda ch_id: self._load_accounts())
             worker.signals.error.connect(self._on_op_error)
             self.thread_pool.start(worker)

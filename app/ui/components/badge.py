@@ -21,13 +21,18 @@ class StatusBadge(QFrame):
         badge_type: Optional[str] = None,
     ) -> None:
         super().__init__(parent)
+        self.setObjectName("statusBadge")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(6)
 
         self.lbl_icon = QLabel(self)
+        self.lbl_icon.setObjectName("statusBadgeIcon")
+        self.lbl_icon.setStyleSheet("border: none; background: transparent;")
+
         self.lbl_text = QLabel(self)
-        self.lbl_text.setStyleSheet("font-weight: 600; font-size: 11px;")
+        self.lbl_text.setObjectName("statusBadgeText")
+        self.lbl_text.setStyleSheet("border: none; background: transparent; font-weight: 600; font-size: 11px;")
 
         layout.addWidget(self.lbl_icon)
         layout.addWidget(self.lbl_text)
@@ -100,13 +105,21 @@ class StatusBadge(QFrame):
             border = tokens.BORDER_DEFAULT
             icon_name = "info"
 
-        self.setStyleSheet(
-            f"background-color: {bg}; border: 1px solid {border}; border-radius: {tokens.RADIUS_SM}px;"
-        )
-        self.lbl_text.setStyleSheet(f"color: {fg}; font-weight: 600; font-size: 11px; background: transparent;")
+        self.setStyleSheet(f"""
+            QFrame#statusBadge {{
+                background-color: {bg};
+                border: 1px solid {border};
+                border-radius: {tokens.RADIUS_SM}px;
+            }}
+            QFrame#statusBadge QLabel {{
+                border: none;
+                background: transparent;
+            }}
+        """)
+        self.lbl_text.setStyleSheet(f"color: {fg}; font-weight: 600; font-size: 11px; border: none; background: transparent;")
         self.lbl_text.setText(text)
         self.lbl_icon.setPixmap(icons.get_colored_icon(icon_name, fg).pixmap(14, 14))
-        self.lbl_icon.setStyleSheet("background: transparent;")
+        self.lbl_icon.setStyleSheet("border: none; background: transparent;")
 
     def text(self) -> str:
         """Return badge display text."""

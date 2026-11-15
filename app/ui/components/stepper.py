@@ -37,6 +37,7 @@ class StepItemWidget(QFrame):
         self.set_state("pending")
 
     def _init_ui(self) -> None:
+        self.setObjectName("stepItem")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(12)
@@ -55,30 +56,36 @@ class StepItemWidget(QFrame):
 
         self.lbl_title = QLabel(self.title_text, self)
         self.lbl_title.setObjectName("stepTitle")
+        self.lbl_title.setStyleSheet("border: none; background: transparent;")
         info_layout.addWidget(self.lbl_title)
 
         self.lbl_status = QLabel("Chưa làm", self)
         self.lbl_status.setObjectName("stepStatus")
+        self.lbl_status.setStyleSheet("border: none; background: transparent;")
         info_layout.addWidget(self.lbl_status)
 
         layout.addLayout(info_layout)
 
         self.setStyleSheet(f"""
-            QFrame {{
+            QFrame#stepItem {{
                 background-color: {tokens.BG_CARD};
                 border: 1px solid {tokens.BORDER_SUBTLE};
                 border-radius: 8px;
             }}
-            QFrame:hover {{
+            QFrame#stepItem:hover {{
                 border-color: {tokens.BORDER_DEFAULT};
             }}
-            QFrame[stepState="active"] {{
+            QFrame#stepItem[stepState="active"] {{
                 background-color: rgba(56, 189, 248, 0.12);
                 border: 1.5px solid {tokens.COLOR_PRIMARY};
             }}
-            QFrame[stepState="done"] {{
+            QFrame#stepItem[stepState="done"] {{
                 background-color: rgba(34, 197, 94, 0.08);
                 border: 1px solid rgba(34, 197, 94, 0.3);
+            }}
+            QFrame#stepItem QLabel {{
+                border: none;
+                background: transparent;
             }}
             QLabel#stepCircle {{
                 background-color: {tokens.BG_APP};
@@ -88,13 +95,13 @@ class StepItemWidget(QFrame):
                 font-size: 12px;
                 font-weight: bold;
             }}
-            QFrame[stepState="active"] QLabel#stepCircle {{
+            QFrame#stepItem[stepState="active"] QLabel#stepCircle {{
                 background-color: {tokens.COLOR_PRIMARY};
                 color: #ffffff;
                 border: none;
                 font-size: 13px;
             }}
-            QFrame[stepState="done"] QLabel#stepCircle {{
+            QFrame#stepItem[stepState="done"] QLabel#stepCircle {{
                 background-color: {tokens.COLOR_SUCCESS};
                 color: #ffffff;
                 border: none;
@@ -104,24 +111,28 @@ class StepItemWidget(QFrame):
                 color: {tokens.TEXT_MUTED};
                 font-size: 13px;
                 font-weight: 500;
+                border: none;
+                background: transparent;
             }}
-            QFrame[stepState="active"] QLabel#stepTitle {{
+            QFrame#stepItem[stepState="active"] QLabel#stepTitle {{
                 color: {tokens.COLOR_PRIMARY};
                 font-weight: 700;
             }}
-            QFrame[stepState="done"] QLabel#stepTitle {{
+            QFrame#stepItem[stepState="done"] QLabel#stepTitle {{
                 color: {tokens.TEXT_PRIMARY};
                 font-weight: 600;
             }}
             QLabel#stepStatus {{
                 color: {tokens.TEXT_MUTED};
                 font-size: 11px;
+                border: none;
+                background: transparent;
             }}
-            QFrame[stepState="active"] QLabel#stepStatus {{
+            QFrame#stepItem[stepState="active"] QLabel#stepStatus {{
                 color: {tokens.COLOR_PRIMARY};
                 font-weight: 600;
             }}
-            QFrame[stepState="done"] QLabel#stepStatus {{
+            QFrame#stepItem[stepState="done"] QLabel#stepStatus {{
                 color: {tokens.COLOR_SUCCESS};
                 font-weight: 500;
             }}
