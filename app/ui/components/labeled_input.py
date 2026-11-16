@@ -4,11 +4,48 @@ from __future__ import annotations
 
 from typing import Optional
 
+from PySide6.QtGui import QTextOption
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QVBoxLayout, QWidget,
 )
 
 from app.ui import tokens
+
+
+class MultiLineTagEdit(QPlainTextEdit):
+    """Multi-line text editor for tags/hashtags, showing 2-3 lines starting from the beginning."""
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setTabChangesFocus(True)
+        self.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+        self.setMinimumHeight(52)
+        self.setMaximumHeight(76)
+        self.setStyleSheet(f"""
+            QPlainTextEdit {{
+                background-color: {tokens.BG_INPUT};
+                color: {tokens.TEXT_PRIMARY};
+                border: 1px solid {tokens.BORDER_DEFAULT};
+                border-radius: {tokens.RADIUS_MD}px;
+                padding: 6px 8px;
+                font-size: 13px;
+            }}
+            QPlainTextEdit:hover {{
+                border-color: {tokens.BORDER_HOVER};
+            }}
+            QPlainTextEdit:focus {{
+                border-color: {tokens.BORDER_FOCUS};
+            }}
+        """)
+
+    def text(self) -> str:
+        return self.toPlainText()
+
+    def setText(self, text: str) -> None:
+        self.setPlainText(text)
+        tc = self.textCursor()
+        tc.setPosition(0)
+        self.setTextCursor(tc)
 
 
 class LabeledInput(QWidget):

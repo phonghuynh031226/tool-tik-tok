@@ -23,6 +23,7 @@ from app.contracts import ChannelAccount, JobStatus
 from app.errors import DownloadFailed
 from app.ui.components import (
     CustomCalendarPopup, SchedulePickerWidget, ToastManager, ToastNotification, WorkflowStepper,
+    VideoPlayerWidget,
 )
 from app.ui.components.toast import DEFAULT_FALLBACK_MESSAGES, DEFAULT_FALLBACK_TITLES
 from app.ui.main_window import MainWindow
@@ -306,3 +307,109 @@ def test_worker_error_logging_format(caplog):
         assert log_record is not None
         assert "event=fetch_metadata_failed" in log_record.message
         assert "exc_type=NetworkError" in log_record.message
+
+
+# -----------------------------------------------------------------------------
+# 8. Anti-Regression: Font Metrics, Segoe UI, No Clipping, Tag Editors, Player
+# -----------------------------------------------------------------------------
+def test_font_metrics_and_no_text_clipping_with_segoe_ui(qtbot, test_container):
+    """Verify font metrics advance + padding does not exceed widget width for all key controls."""
+    from PySide6.QtGui import QFont, QFontDatabase
+    from PySide6.QtWidgets import QLabel, QToolButton
+
+    app = QApplication.instance()
+    available_families = QFontDatabase.families()
+    has_segoe = "Segoe UI" in available_families
+    font_family = "Segoe UI" if has_segoe else app.font().family()
+    font = QFont(font_family, 10)
+    app.setFont(font)
+
+    window = MainWindow(services=test_container)
+    qtbot.addWidget(window)
+    window.resize(1366, 768)
+    window.show()
+    QApplication.processEvents()
+
+    dash = window.page_dashboard
+    dash.radio_publish_schedule.setChecked(True)
+    QApplication.processEvents()
+
+    picker = dash.schedule_picker
+    fm_time = picker.combo_hour.fontMetrics()
+
+    # 1. Hour & minute boxes: must comfortably accommodate longest 2-digit numbers
+    for val_str in ("23", "59", "30", "20", "00"):
+        adv = fm_time.horizontalAdvance(val_str)
+        assert picker.combo_hour.width() >= adv + 20, (
+            f"combo_hour width {picker.combo_hour.width()} too small for '{val_str}' (adv={adv})"
+        )
+        assert picker.combo_minute.width() >= adv + 20, (
+            f"combo_minute width {picker.combo_minute.width()} too small for '{val_str}' (adv={adv})"
+        )
+
+    # 2. Calendar day buttons and headers
+    popup = CustomCalendarPopup(QDate.currentDate())
+    qtbot.addWidget(popup)
+    popup.show()
+    QApplication.processEvents()
+
+    # Check all day buttons in calendar grid
+    for i in range(popup.grid_layout.count()):
+        item = popup.grid_layout.itemAt(i)
+        w = item.widget() if item else None
+        if isinstance(w, QToolButton) and w.text():
+            txt = w.text()
+            fm = w.fontMetrics()
+            adv = fm.horizontalAdvance(txt)
+            assert w.width() >= adv, f"Day button '{txt}' width {w.width()} < advance {adv}"
+            # Day buttons must have minimum size 36x36
+            assert w.minimumWidth() >= 36
+            assert w.minimumHeight() >= 36
+
+    # 3. Check weekday headers
+    for i in range(popup.week_header_layout.count()):
+        item = popup.week_header_layout.itemAt(i)
+        w = item.widget() if item else None
+        if isinstance(w, QLabel) and w.text():
+            txt = w.text()
+            adv = w.fontMetrics().horizontalAdvance(txt)
+            assert w.width() >= adv, f"Header '{txt}' width {w.width()} < advance {adv}"
+
+    # 4. Check Quick chips in SchedulePicker: no indentation, equal alignments
+    row0_chip = picker.btn_chip_plus_1h
+    row1_chip = picker.btn_chip_tomorrow
+    assert row0_chip.x() == row1_chip.x(), (
+        f"Quick chips must be aligned without indent: row0={row0_chip.x()}, row1={row1_chip.x()}"
+    )
+
+    # 5. Check "+ Thêm kênh" button label does not contain redundant "+"
+    assert "+" not in dash.btn_add_channel.text()
+    assert dash.btn_add_channel.text().strip() == "Thêm kênh"
+
+
+def test_multiline_tag_editor_features(qtbot, test_container):
+    """Verify hashtag and tag editors are multi-line and preserve start of text."""
+    window = MainWindow(services=test_container)
+    qtbot.addWidget(window)
+    dash = window.page_dashboard
+
+    from app.ui.components import MultiLineTagEdit
+    assert isinstance(dash.edit_hashtags, MultiLineTagEdit)
+    assert isinstance(dash.edit_tags, MultiLineTagEdit)
+
+    # Height should accommodate 2-3 lines
+    assert dash.edit_hashtags.minimumHeight() >= 50
+
+    # Setting long text must display from the beginning (cursor at 0)
+    long_tags = "tag1, tag2, tag3, tag4, tag5, tag6, tag7, tag8, tag9, tag10, tag11, tag12"
+    dash.edit_tags.setText(long_tags)
+    assert dash.edit_tags.text() == long_tags
+    assert dash.edit_tags.textCursor().position() == 0
+
+
+def test_video_player_first_frame_and_height_limit(qtbot):
+    """Verify video player container height is constrained reasonably."""
+    vp = VideoPlayerWidget()
+    qtbot.addWidget(vp)
+    assert vp.screen_container.maximumHeight() <= 360
+    assert hasattr(vp, "set_thumbnail")

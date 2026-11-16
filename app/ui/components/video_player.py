@@ -35,9 +35,11 @@ class VideoPlayerWidget(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(8)
 
-        # Video / Placeholder Stack
+        # Video / Placeholder / Thumbnail Stack
         self.screen_container = QWidget(self)
-        self.screen_container.setMinimumHeight(240)
+        self.screen_container.setMinimumHeight(200)
+        self.screen_container.setMaximumHeight(320)
+        self.video_widget.setMaximumHeight(320)
         self.stack_layout = QStackedLayout(self.screen_container)
 
         # Placeholder when no video
@@ -45,6 +47,13 @@ class VideoPlayerWidget(QWidget):
         self.placeholder.setObjectName("videoPlaceholder")
         self.placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stack_layout.addWidget(self.placeholder)
+
+        # Thumbnail view (if available before playback)
+        self.thumbnail_label = QLabel(self)
+        self.thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.thumbnail_label.setScaledContents(True)
+        self.thumbnail_label.setMaximumHeight(320)
+        self.stack_layout.addWidget(self.thumbnail_label)
 
         # Active video view
         self.stack_layout.addWidget(self.video_widget)
@@ -84,8 +93,23 @@ class VideoPlayerWidget(QWidget):
         self.player.durationChanged.connect(self._on_duration_changed)
         self.player.playbackStateChanged.connect(self._on_state_changed)
 
-    def load_video(self, path: Path | str) -> None:
-        """Load an MP4 file into the player."""
+    def set_thumbnail(self, thumbnail_path: Path | str) -> None:
+        """Display video thumbnail while paused/stopped."""
+        p = Path(thumbnail_path)
+        if p.exists() and p.is_file():
+            from PySide6.QtGui import QPixmap
+            pix = QPixmap(str(p))
+            if not pix.isNull():
+                self.thumbnail_label.setPixmap(pix.scaled(
+                    self.screen_container.size(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                ))
+                if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+                    self.stack_layout.setCurrentWidget(self.thumbnail_label)
+
+    def load_video(self, path: Path | str, thumbnail_path: Optional[Path | str] = None) -> None:
+        """Load an MP4 file into the player and prime the first frame at ~100ms."""
         p = Path(path)
         self._current_path = p
         is_offscreen = os.environ.get("QT_QPA_PLATFORM") == "offscreen" or (
@@ -100,12 +124,29 @@ class VideoPlayerWidget(QWidget):
             except Exception:
                 is_valid_mp4 = False
 
+        if thumbnail_path:
+            self.set_thumbnail(thumbnail_path)
+
         if p.exists() and not is_offscreen and is_valid_mp4:
             try:
                 self.player.setSource(QUrl.fromLocalFile(str(p.resolve())))
                 self.stack_layout.setCurrentWidget(self.video_widget)
                 self.btn_play_pause.setEnabled(True)
                 self.slider.setEnabled(True)
+
+                # Show first video frame (seek ~100ms and pause)
+                def _prime_frame(status):
+                    if status in (QMediaPlayer.MediaStatus.LoadedMedia, QMediaPlayer.MediaStatus.BufferedMedia):
+                        self.player.setPosition(100)
+                        self.player.pause()
+                        try:
+                            self.player.mediaStatusChanged.disconnect(_prime_frame)
+                        except Exception:
+                            pass
+
+                self.player.mediaStatusChanged.connect(_prime_frame)
+                self.player.setPosition(100)
+                self.player.pause()
             except Exception:
                 self.placeholder.setText(f"Video: {p.name}")
                 self.stack_layout.setCurrentWidget(self.placeholder)
@@ -115,15 +156,13 @@ class VideoPlayerWidget(QWidget):
             self.placeholder.setText(f"Video: {p.name}")
             self.stack_layout.setCurrentWidget(self.placeholder)
             self.btn_play_pause.setEnabled(True)
-            self.placeholder.setText(f"Video: {p.name}")
-            self.stack_layout.setCurrentWidget(self.placeholder)
-            self.btn_play_pause.setEnabled(True)
 
     def clear(self) -> None:
         """Reset player state."""
         self.player.stop()
         self.player.setSource(QUrl())
         self._current_path = None
+        self.thumbnail_label.clear()
         self.placeholder.setText("Chưa có video được chọn\n(Tải từ TikTok hoặc chọn MP4 từ máy)")
         self.stack_layout.setCurrentWidget(self.placeholder)
         self.btn_play_pause.setEnabled(False)
@@ -138,6 +177,7 @@ class VideoPlayerWidget(QWidget):
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.player.pause()
         else:
+            self.stack_layout.setCurrentWidget(self.video_widget)
             self.player.play()
 
     @Slot(int)

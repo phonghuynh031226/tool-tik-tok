@@ -7,9 +7,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from PySide6.QtCore import QDate, QEvent, QPoint, QSize, Qt, Signal, Slot
+from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import (
     QButtonGroup, QComboBox, QDialog, QFrame, QGridLayout, QHBoxLayout,
-    QLabel, QPushButton, QVBoxLayout, QWidget,
+    QLabel, QPushButton, QToolButton, QVBoxLayout, QWidget,
 )
 
 from app.ui import icons, tokens
@@ -20,14 +21,16 @@ VIETNAMESE_WEEKDAYS_SHORT = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
 
 
 class CustomCalendarPopup(QFrame):
-    """Full-featured dark theme calendar popup with Vietnamese day names (Monday start)."""
+    """Full-featured dark theme calendar popup with Vietnamese day names (Monday start).
+    Built with QToolButton grid to ensure no stylesheet clipping on 2-digit numbers.
+    """
 
     date_selected = Signal(QDate)
 
     def __init__(self, current_date: QDate, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-        self.setFixedWidth(328)
+        self.setFixedWidth(340)
 
         self._view_year = current_date.year()
         self._view_month = current_date.month()
@@ -42,7 +45,7 @@ class CustomCalendarPopup(QFrame):
         self.setStyleSheet(f"""
             QFrame#calendarPopup {{
                 background-color: {tokens.BG_CARD};
-                border: 1px solid {tokens.BORDER_DEFAULT};
+                border: 1.5px solid {tokens.BORDER_DEFAULT};
                 border-radius: {tokens.RADIUS_MD}px;
                 padding: 10px;
             }}
@@ -60,18 +63,21 @@ class CustomCalendarPopup(QFrame):
         header_layout = QHBoxLayout()
         header_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.btn_prev = QPushButton("‹", self)
-        self.btn_prev.setFixedSize(28, 28)
+        self.btn_prev = QToolButton(self)
+        self.btn_prev.setIcon(icons.get_icon("chevron-left", color=tokens.TEXT_PRIMARY))
+        self.btn_prev.setIconSize(QSize(18, 18))
+        self.btn_prev.setFixedSize(32, 32)
+        self.btn_prev.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_prev.setStyleSheet(f"""
-            QPushButton {{
+            QToolButton {{
                 background-color: {tokens.BG_INPUT};
                 color: {tokens.TEXT_PRIMARY};
                 border: 1px solid {tokens.BORDER_SUBTLE};
-                border-radius: 4px;
-                font-size: 16px;
-                font-weight: bold;
+                border-radius: 6px;
+                padding: 0px;
+                margin: 0px;
             }}
-            QPushButton:hover {{
+            QToolButton:hover {{
                 background-color: {tokens.BG_INPUT_HOVER};
                 border-color: {tokens.PRIMARY};
             }}
@@ -82,22 +88,25 @@ class CustomCalendarPopup(QFrame):
         self.lbl_month_year = QLabel(self)
         self.lbl_month_year.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_month_year.setStyleSheet(
-            f"font-size: 13px; font-weight: 700; color: {tokens.TEXT_PRIMARY};"
+            f"font-size: 14px; font-weight: 700; color: {tokens.TEXT_PRIMARY};"
         )
         header_layout.addWidget(self.lbl_month_year, stretch=1)
 
-        self.btn_next = QPushButton("›", self)
-        self.btn_next.setFixedSize(28, 28)
+        self.btn_next = QToolButton(self)
+        self.btn_next.setIcon(icons.get_icon("chevron-right", color=tokens.TEXT_PRIMARY))
+        self.btn_next.setIconSize(QSize(18, 18))
+        self.btn_next.setFixedSize(32, 32)
+        self.btn_next.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_next.setStyleSheet(f"""
-            QPushButton {{
+            QToolButton {{
                 background-color: {tokens.BG_INPUT};
                 color: {tokens.TEXT_PRIMARY};
                 border: 1px solid {tokens.BORDER_SUBTLE};
-                border-radius: 4px;
-                font-size: 16px;
-                font-weight: bold;
+                border-radius: 6px;
+                padding: 0px;
+                margin: 0px;
             }}
-            QPushButton:hover {{
+            QToolButton:hover {{
                 background-color: {tokens.BG_INPUT_HOVER};
                 border-color: {tokens.PRIMARY};
             }}
@@ -118,7 +127,7 @@ class CustomCalendarPopup(QFrame):
             self.week_header_layout.addWidget(lbl)
         layout.addLayout(self.week_header_layout)
 
-        # Grid of days
+        # Grid of days (QToolButton grid)
         self.grid_widget = QWidget(self)
         self.grid_layout = QGridLayout(self.grid_widget)
         self.grid_layout.setContentsMargins(0, 0, 0, 0)
@@ -142,8 +151,10 @@ class CustomCalendarPopup(QFrame):
         for row_idx, week in enumerate(month_days):
             for col_idx, day_date in enumerate(week):
                 qdate = QDate(day_date.year, day_date.month, day_date.day)
-                btn = QPushButton(str(day_date.day), self.grid_widget)
-                btn.setFixedSize(38, 30)
+                btn = QToolButton(self.grid_widget)
+                btn.setText(str(day_date.day))
+                btn.setMinimumSize(36, 36)
+                btn.setFixedSize(38, 36)
                 btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
                 is_curr_month = (day_date.month == self._view_month)
@@ -152,49 +163,59 @@ class CustomCalendarPopup(QFrame):
                 is_today = (qdate == self._today)
 
                 if not is_curr_month:
-                    btn.setStyleSheet("color: #475569; background: transparent; border: none; font-size: 12px;")
+                    btn.setStyleSheet(
+                        "QToolButton { color: #475569; background-color: transparent; border: none; font-size: 13px; padding: 0px; margin: 0px; }"
+                    )
                     btn.setEnabled(False)
                 elif is_past:
-                    btn.setStyleSheet("color: #475569; background: transparent; border: none; font-size: 12px;")
+                    btn.setStyleSheet(
+                        "QToolButton { color: #475569; background-color: transparent; border: none; font-size: 13px; padding: 0px; margin: 0px; }"
+                    )
                     btn.setEnabled(False)
                 elif is_selected:
                     btn.setStyleSheet(f"""
-                        QPushButton {{
-                            background-color: {tokens.PRIMARY};
+                        QToolButton {{
+                            background-color: {tokens.PRIMARY_HOVER};
                             color: #ffffff;
                             border: none;
                             border-radius: 6px;
-                            font-size: 12px;
-                            font-weight: bold;
+                            font-size: 13px;
+                            font-weight: 700;
+                            padding: 0px;
+                            margin: 0px;
                         }}
                     """)
                     btn.clicked.connect(lambda checked=False, d=qdate: self._on_date_clicked(d))
                 elif is_today:
                     btn.setStyleSheet(f"""
-                        QPushButton {{
+                        QToolButton {{
                             background-color: transparent;
                             color: #38bdf8;
-                            border: 1px solid #38bdf8;
+                            border: 1.5px solid #38bdf8;
                             border-radius: 6px;
-                            font-size: 12px;
-                            font-weight: bold;
+                            font-size: 13px;
+                            font-weight: 700;
+                            padding: 0px;
+                            margin: 0px;
                         }}
-                        QPushButton:hover {{
+                        QToolButton:hover {{
                             background-color: {tokens.BG_INPUT_HOVER};
                         }}
                     """)
                     btn.clicked.connect(lambda checked=False, d=qdate: self._on_date_clicked(d))
                 else:
                     btn.setStyleSheet(f"""
-                        QPushButton {{
+                        QToolButton {{
                             background-color: transparent;
                             color: {tokens.TEXT_PRIMARY};
                             border: none;
                             border-radius: 6px;
-                            font-size: 12px;
+                            font-size: 13px;
                             font-weight: 500;
+                            padding: 0px;
+                            margin: 0px;
                         }}
-                        QPushButton:hover {{
+                        QToolButton:hover {{
                             background-color: {tokens.BG_INPUT_HOVER};
                         }}
                     """)
@@ -224,9 +245,36 @@ class CustomCalendarPopup(QFrame):
         self.close()
 
     def show_below(self, target_widget: QWidget) -> None:
-        """Position and display the popup right under the target widget."""
-        pos = target_widget.mapToGlobal(QPoint(0, target_widget.height() + 4))
-        self.move(pos)
+        """Position and display popup right under target widget, clamped to stay fully inside window."""
+        target_pos = target_widget.mapToGlobal(QPoint(0, 0))
+        popup_w = self.width() if self.width() > 0 else 340
+        popup_h = self.sizeHint().height() if self.sizeHint().height() > 0 else 320
+
+        top_window = target_widget.window()
+        if top_window:
+            win_pos = top_window.mapToGlobal(QPoint(0, 0))
+            win_w = top_window.width()
+            win_h = top_window.height()
+
+            x = target_pos.x()
+            # Clamp right edge
+            if x + popup_w > win_pos.x() + win_w - 12:
+                x = win_pos.x() + win_w - popup_w - 12
+            # Clamp left edge
+            if x < win_pos.x() + 12:
+                x = win_pos.x() + 12
+
+            y = target_pos.y() + target_widget.height() + 4
+            # If popup overflows window bottom, show above target
+            if y + popup_h > win_pos.y() + win_h - 12:
+                y = target_pos.y() - popup_h - 4
+            if y < win_pos.y() + 12:
+                y = win_pos.y() + 12
+        else:
+            x = target_pos.x()
+            y = target_pos.y() + target_widget.height() + 4
+
+        self.move(QPoint(int(x), int(y)))
         self.show()
 
 
@@ -254,7 +302,7 @@ class SchedulePickerWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
 
-        # Row 1: Date Button + Hour / Minute selectors (Compact, wrap timezone)
+        # Row 1: Date Button + Hour / Minute selectors
         picker_row = QHBoxLayout()
         picker_row.setSpacing(8)
 
@@ -284,10 +332,32 @@ class SchedulePickerWidget(QWidget):
         time_box = QHBoxLayout()
         time_box.setSpacing(4)
 
+        combo_ss = f"""
+            QComboBox {{
+                background-color: {tokens.BG_INPUT};
+                color: {tokens.TEXT_PRIMARY};
+                border: 1px solid {tokens.BORDER_DEFAULT};
+                border-radius: {tokens.RADIUS_MD}px;
+                padding-left: 8px;
+                padding-right: 22px;
+                font-size: 13px;
+                font-weight: 600;
+                min-height: {tokens.HEIGHT_INPUT_MD - 2}px;
+            }}
+            QComboBox:hover {{
+                border-color: {tokens.BORDER_HOVER};
+                background-color: {tokens.BG_INPUT_HOVER};
+            }}
+            QComboBox::drop-down {{
+                border: none;
+                width: 20px;
+            }}
+        """
+
         self.combo_hour = QComboBox(self)
         for h in range(24):
             self.combo_hour.addItem(f"{h:02d}", h)
-        self.combo_hour.setFixedWidth(56)
+        self.combo_hour.setStyleSheet(combo_ss)
         self.combo_hour.currentIndexChanged.connect(self._on_time_component_changed)
         time_box.addWidget(self.combo_hour)
 
@@ -298,14 +368,17 @@ class SchedulePickerWidget(QWidget):
         self.combo_minute = QComboBox(self)
         for m in range(0, 60, 5):
             self.combo_minute.addItem(f"{m:02d}", m)
-        self.combo_minute.setFixedWidth(56)
+        self.combo_minute.setStyleSheet(combo_ss)
         self.combo_minute.currentIndexChanged.connect(self._on_time_component_changed)
         time_box.addWidget(self.combo_minute)
 
         picker_row.addLayout(time_box)
         layout.addLayout(picker_row)
 
-        # Row 2: Sub-info row (Timezone + Live validation / summary preview)
+        # Dynamic size adjustment for time combos based on actual font metrics + padding
+        self._update_time_combo_widths()
+
+        # Row 2: Sub-info row (Timezone)
         sub_info_row = QHBoxLayout()
         sub_info_row.setSpacing(8)
 
@@ -317,36 +390,34 @@ class SchedulePickerWidget(QWidget):
         sub_info_row.addStretch()
         layout.addLayout(sub_info_row)
 
-        # Row 3: Quick suggestion chips in 2 wrapped rows or compact layout
+        # Row 3: Quick suggestion chips in 2x2 wrapping grid without indentation
         chips_box = QVBoxLayout()
         chips_box.setSpacing(4)
+        chips_box.setContentsMargins(0, 0, 0, 0)
 
-        chips_row1 = QHBoxLayout()
-        chips_row1.setSpacing(6)
         lbl_quick = QLabel("Gợi ý nhanh:", self)
         lbl_quick.setStyleSheet(f"color: {tokens.TEXT_SECONDARY}; font-size: 11px; font-weight: 500;")
-        chips_row1.addWidget(lbl_quick)
+        chips_box.addWidget(lbl_quick)
+
+        chips_grid = QGridLayout()
+        chips_grid.setContentsMargins(0, 0, 0, 0)
+        chips_grid.setSpacing(6)
 
         self.btn_chip_plus_1h = self._create_chip("+1 giờ", self._chip_plus_1h)
-        chips_row1.addWidget(self.btn_chip_plus_1h)
+        chips_grid.addWidget(self.btn_chip_plus_1h, 0, 0)
 
         self.btn_chip_tonight = self._create_chip("Tối nay 20:00", self._chip_tonight)
-        chips_row1.addWidget(self.btn_chip_tonight)
-        chips_row1.addStretch()
-        chips_box.addLayout(chips_row1)
-
-        chips_row2 = QHBoxLayout()
-        chips_row2.setSpacing(6)
-        chips_row2.setContentsMargins(60, 0, 0, 0)  # Indent under chips
+        chips_grid.addWidget(self.btn_chip_tonight, 0, 1)
 
         self.btn_chip_tomorrow = self._create_chip("Sáng mai 08:00", self._chip_tomorrow)
-        chips_row2.addWidget(self.btn_chip_tomorrow)
+        chips_grid.addWidget(self.btn_chip_tomorrow, 1, 0)
 
         self.btn_chip_weekend = self._create_chip("Cuối tuần 09:00", self._chip_weekend)
-        chips_row2.addWidget(self.btn_chip_weekend)
-        chips_row2.addStretch()
-        chips_box.addLayout(chips_row2)
+        chips_grid.addWidget(self.btn_chip_weekend, 1, 1)
 
+        chips_grid.setColumnStretch(0, 1)
+        chips_grid.setColumnStretch(1, 1)
+        chips_box.addLayout(chips_grid)
         layout.addLayout(chips_box)
 
         # Row 4: Live Summary & Validation Notice
@@ -364,18 +435,46 @@ class SchedulePickerWidget(QWidget):
         lbl_notice.setStyleSheet(f"color: {tokens.TEXT_MUTED}; font-size: 11px;")
         layout.addWidget(lbl_notice)
 
+    def _calculate_combo_width(self, combo: QComboBox) -> int:
+        """Calculate required combo width from QFontMetrics of longest two-digit number + padding."""
+        fm = combo.fontMetrics()
+        # Find maximum advance among all 2-digit numbers
+        max_num_w = max(fm.horizontalAdvance(f"{n:02d}") for n in range(60))
+        # Left padding (8px) + text width + drop-down subcontrol (22px) + border/margins + 20px safety margin
+        calculated_w = max_num_w + 54
+        return max(calculated_w, 72)
+
+    def _update_time_combo_widths(self) -> None:
+        """Update hour and minute combobox widths dynamically so two-digit text is never cut."""
+        w_hour = self._calculate_combo_width(self.combo_hour)
+        w_min = self._calculate_combo_width(self.combo_minute)
+        final_w = max(w_hour, w_min, 72)
+        self.combo_hour.setFixedWidth(final_w)
+        self.combo_minute.setFixedWidth(final_w)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._update_time_combo_widths()
+
+    def changeEvent(self, event: QEvent) -> None:
+        super().changeEvent(event)
+        if event.type() in (QEvent.Type.FontChange, QEvent.Type.StyleChange):
+            self._update_time_combo_widths()
+
     def _create_chip(self, label: str, callback) -> QPushButton:
         btn = QPushButton(label, self)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setMinimumHeight(28)
         btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: #1e2538;
                 color: #cbd5e1;
                 border: 1px solid #2d3748;
                 border-radius: 12px;
-                padding: 2px 10px;
+                padding: 4px 8px;
                 font-size: 11px;
                 font-weight: 500;
+                text-align: center;
             }}
             QPushButton:hover {{
                 background-color: {tokens.PRIMARY_BG};
@@ -526,4 +625,3 @@ class SchedulePickerWidget(QWidget):
         else:
             self._target_dt = dt
         self._update_display()
-

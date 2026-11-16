@@ -20,8 +20,9 @@ from app.ui.model_loading import populate_models
 from app.ui import tokens
 from app.ui.tokens import format_job_status
 from app.ui.components import (
-    AppButton, Card, ConfirmDialog, CustomCalendarPopup, SchedulePickerWidget,
-    ToastManager, UploadConfirmDialog, VideoPlayerWidget, WorkflowStepper,
+    AppButton, Card, ConfirmDialog, CustomCalendarPopup, MultiLineTagEdit,
+    SchedulePickerWidget, ToastManager, UploadConfirmDialog, VideoPlayerWidget,
+    WorkflowStepper,
 )
 from app.ui.services import ServiceContainer
 from app.ui.state import JobState, format_hashtags
@@ -349,7 +350,6 @@ class DashboardPage(QWidget):
         meta_layout.addWidget(self.lbl_meta_status, 2, 1)
 
         s1_layout.addWidget(self.tiktok_meta_box)
-        s1_layout.addStretch(1)
         self.step1_card.add_layout(s1_layout)
 
         # Backward compatibility alias for any test referencing step2_card
@@ -444,7 +444,7 @@ class DashboardPage(QWidget):
         lbl_hash.setProperty("class", "fieldLabel")
         tags_grid.addWidget(lbl_hash, 0, 0)
 
-        self.edit_hashtags = QLineEdit(self.step2_card)
+        self.edit_hashtags = MultiLineTagEdit(self.step2_card)
         self.edit_hashtags.setPlaceholderText("shorts, trending, fyp...")
         self.edit_hashtags.textChanged.connect(self._on_hashtags_changed)
         tags_grid.addWidget(self.edit_hashtags, 1, 0)
@@ -453,7 +453,7 @@ class DashboardPage(QWidget):
         lbl_tags.setProperty("class", "fieldLabel")
         tags_grid.addWidget(lbl_tags, 0, 1)
 
-        self.edit_tags = QLineEdit(self.step2_card)
+        self.edit_tags = MultiLineTagEdit(self.step2_card)
         self.edit_tags.setPlaceholderText("hài hước, video ngắn...")
         self.edit_tags.textChanged.connect(self._on_tags_changed)
         tags_grid.addWidget(self.edit_tags, 1, 1)
@@ -486,7 +486,7 @@ class DashboardPage(QWidget):
         ch_header.addWidget(lbl_ch)
         ch_header.addStretch()
 
-        self.btn_add_channel = AppButton("+ Thêm kênh", variant="ghost", icon_name="plus", parent=self.step3_card)
+        self.btn_add_channel = AppButton("Thêm kênh", variant="ghost", icon_name="plus", parent=self.step3_card)
         self.btn_add_channel.setToolTip("Chuyển sang trang Quản lý Kênh YouTube")
         self.btn_add_channel.clicked.connect(self._navigate_to_youtube_channels)
         ch_header.addWidget(self.btn_add_channel)
@@ -738,16 +738,17 @@ class DashboardPage(QWidget):
 
         if is_wide:
             # 2 columns: Left = Step 1 Video (spanning rows 0 & 1); Right = Step 2 AI (row 0), Step 3 YouTube (row 1)
-            self.steps_grid.addWidget(self.step1_card, 0, 0, 2, 1)
-            self.steps_grid.addWidget(self.step2_card, 0, 1)
-            self.steps_grid.addWidget(self.step3_card, 1, 1)
+            # AlignTop prevents Step 1 from artificially stretching to match right column height
+            self.steps_grid.addWidget(self.step1_card, 0, 0, 2, 1, Qt.AlignmentFlag.AlignTop)
+            self.steps_grid.addWidget(self.step2_card, 0, 1, Qt.AlignmentFlag.AlignTop)
+            self.steps_grid.addWidget(self.step3_card, 1, 1, Qt.AlignmentFlag.AlignTop)
             self.steps_grid.setColumnStretch(0, 1)
             self.steps_grid.setColumnStretch(1, 1)
         else:
-            # 1 column: Stack Step 1, Step 2, Step 3 vertically
-            self.steps_grid.addWidget(self.step1_card, 0, 0)
-            self.steps_grid.addWidget(self.step2_card, 1, 0)
-            self.steps_grid.addWidget(self.step3_card, 2, 0)
+            # 1 column: Stack Step 1, Step 2, Step 3 vertically, aligned to top
+            self.steps_grid.addWidget(self.step1_card, 0, 0, Qt.AlignmentFlag.AlignTop)
+            self.steps_grid.addWidget(self.step2_card, 1, 0, Qt.AlignmentFlag.AlignTop)
+            self.steps_grid.addWidget(self.step3_card, 2, 0, Qt.AlignmentFlag.AlignTop)
             self.steps_grid.setColumnStretch(0, 1)
             self.steps_grid.setColumnStretch(1, 0)
 
@@ -1118,13 +1119,15 @@ class DashboardPage(QWidget):
     def _on_desc_changed(self) -> None:
         self.state.description = self.edit_desc.toPlainText()
 
-    @Slot(str)
-    def _on_hashtags_changed(self, text: str) -> None:
+    def _on_hashtags_changed(self, text: Optional[str] = None) -> None:
+        if text is None:
+            text = self.edit_hashtags.text() if hasattr(self.edit_hashtags, "text") else self.edit_hashtags.toPlainText()
         raw = text.replace(",", " ").split()
         self.state.hashtags = [h.lstrip("#") for h in raw if h.strip()]
 
-    @Slot(str)
-    def _on_tags_changed(self, text: str) -> None:
+    def _on_tags_changed(self, text: Optional[str] = None) -> None:
+        if text is None:
+            text = self.edit_tags.text() if hasattr(self.edit_tags, "text") else self.edit_tags.toPlainText()
         raw = [t.strip() for t in text.split(",") if t.strip()]
         self.state.tags = raw
 
