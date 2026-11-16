@@ -33,6 +33,7 @@ class StepItemWidget(QFrame):
         self._state: Optional[StepState] = None
 
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._is_compact = False
         self._init_ui()
         self.set_state("pending")
 
@@ -142,6 +143,24 @@ class StepItemWidget(QFrame):
         super().mousePressEvent(event)
         self.clicked.emit(self.step_number)
 
+    def set_compact(self, compact: bool) -> None:
+        """Toggle compact mode: hide status label, reduce padding and circle size."""
+        if self._is_compact == compact:
+            return
+        self._is_compact = compact
+        self.lbl_status.setVisible(not compact)
+        layout = self.layout()
+        if isinstance(layout, QHBoxLayout):
+            if compact:
+                layout.setContentsMargins(8, 4, 8, 4)
+                layout.setSpacing(6)
+                self.lbl_circle.setFixedSize(24, 24)
+            else:
+                layout.setContentsMargins(12, 10, 12, 10)
+                layout.setSpacing(12)
+                self.lbl_circle.setFixedSize(32, 32)
+        self.updateGeometry()
+
     def set_state(self, state: StepState) -> None:
         if self._state == state:
             return
@@ -193,6 +212,12 @@ class WorkflowStepper(QFrame):
             item.clicked.connect(self.step_selected.emit)
             self._items[step_num] = item
             layout.addWidget(item, stretch=1)
+
+    def set_compact(self, compact: bool) -> None:
+        """Set compact mode across all step items."""
+        for item in self._items.values():
+            item.set_compact(compact)
+        self.updateGeometry()
 
     def set_step_state(self, step_number: int, state: StepState) -> None:
         if step_number in self._items:

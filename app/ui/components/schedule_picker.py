@@ -27,7 +27,7 @@ class CustomCalendarPopup(QFrame):
     def __init__(self, current_date: QDate, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-        self.setFixedWidth(310)
+        self.setFixedWidth(328)
 
         self._view_year = current_date.year()
         self._view_month = current_date.month()
@@ -113,8 +113,8 @@ class CustomCalendarPopup(QFrame):
         for day_name in VIETNAMESE_WEEKDAYS_SHORT:
             lbl = QLabel(day_name, self)
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lbl.setFixedSize(36, 22)
-            lbl.setStyleSheet(f"font-size: 11px; font-weight: 700; color: {tokens.TEXT_SECONDARY};")
+            lbl.setFixedSize(38, 24)
+            lbl.setStyleSheet("font-size: 12px; font-weight: 700; color: #cbd5e1;")
             self.week_header_layout.addWidget(lbl)
         layout.addLayout(self.week_header_layout)
 
@@ -143,7 +143,7 @@ class CustomCalendarPopup(QFrame):
             for col_idx, day_date in enumerate(week):
                 qdate = QDate(day_date.year, day_date.month, day_date.day)
                 btn = QPushButton(str(day_date.day), self.grid_widget)
-                btn.setFixedSize(36, 32)
+                btn.setFixedSize(38, 30)
                 btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
                 is_curr_month = (day_date.month == self._view_month)
@@ -152,10 +152,10 @@ class CustomCalendarPopup(QFrame):
                 is_today = (qdate == self._today)
 
                 if not is_curr_month:
-                    btn.setStyleSheet(f"color: #334155; background: transparent; border: none; font-size: 12px;")
+                    btn.setStyleSheet("color: #475569; background: transparent; border: none; font-size: 12px;")
                     btn.setEnabled(False)
                 elif is_past:
-                    btn.setStyleSheet(f"color: #475569; background: transparent; border: none; font-size: 12px;")
+                    btn.setStyleSheet("color: #475569; background: transparent; border: none; font-size: 12px;")
                     btn.setEnabled(False)
                 elif is_selected:
                     btn.setStyleSheet(f"""
@@ -192,6 +192,7 @@ class CustomCalendarPopup(QFrame):
                             border: none;
                             border-radius: 6px;
                             font-size: 12px;
+                            font-weight: 500;
                         }}
                         QPushButton:hover {{
                             background-color: {tokens.BG_INPUT_HOVER};
@@ -251,9 +252,9 @@ class SchedulePickerWidget(QWidget):
     def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
+        layout.setSpacing(8)
 
-        # Row 1: Date Button + Hour / Minute selectors + Timezone
+        # Row 1: Date Button + Hour / Minute selectors (Compact, wrap timezone)
         picker_row = QHBoxLayout()
         picker_row.setSpacing(8)
 
@@ -266,7 +267,7 @@ class SchedulePickerWidget(QWidget):
                 color: {tokens.TEXT_PRIMARY};
                 border: 1px solid {tokens.BORDER_DEFAULT};
                 border-radius: {tokens.RADIUS_MD}px;
-                padding: 4px 12px;
+                padding: 4px 10px;
                 font-weight: 600;
                 font-size: 13px;
                 text-align: left;
@@ -277,68 +278,84 @@ class SchedulePickerWidget(QWidget):
             }}
         """)
         self.btn_date.clicked.connect(self._open_calendar_popup)
-        picker_row.addWidget(self.btn_date, stretch=3)
+        picker_row.addWidget(self.btn_date, stretch=1)
 
-        # Hour combo
+        # Time container (Hour : Minute)
+        time_box = QHBoxLayout()
+        time_box.setSpacing(4)
+
         self.combo_hour = QComboBox(self)
         for h in range(24):
             self.combo_hour.addItem(f"{h:02d}", h)
-        self.combo_hour.setFixedWidth(64)
+        self.combo_hour.setFixedWidth(56)
         self.combo_hour.currentIndexChanged.connect(self._on_time_component_changed)
-        picker_row.addWidget(self.combo_hour)
+        time_box.addWidget(self.combo_hour)
 
         lbl_colon = QLabel(":", self)
         lbl_colon.setStyleSheet("font-weight: bold; font-size: 14px; color: #94a3b8;")
-        picker_row.addWidget(lbl_colon)
+        time_box.addWidget(lbl_colon)
 
-        # Minute combo (5 min step)
         self.combo_minute = QComboBox(self)
         for m in range(0, 60, 5):
             self.combo_minute.addItem(f"{m:02d}", m)
-        self.combo_minute.setFixedWidth(64)
+        self.combo_minute.setFixedWidth(56)
         self.combo_minute.currentIndexChanged.connect(self._on_time_component_changed)
-        picker_row.addWidget(self.combo_minute)
+        time_box.addWidget(self.combo_minute)
 
-        # Timezone label
+        picker_row.addLayout(time_box)
+        layout.addLayout(picker_row)
+
+        # Row 2: Sub-info row (Timezone + Live validation / summary preview)
+        sub_info_row = QHBoxLayout()
+        sub_info_row.setSpacing(8)
+
         tz_str = datetime.now().astimezone().strftime("%z")
         tz_formatted = f"GMT{tz_str[:3]}:{tz_str[3:]}" if len(tz_str) == 5 else "GMT+7"
         self.lbl_timezone = QLabel(f"Múi giờ máy: {tz_formatted}", self)
         self.lbl_timezone.setStyleSheet("color: #38bdf8; font-weight: 600; font-size: 12px;")
-        picker_row.addWidget(self.lbl_timezone)
+        sub_info_row.addWidget(self.lbl_timezone)
+        sub_info_row.addStretch()
+        layout.addLayout(sub_info_row)
 
-        picker_row.addStretch()
-        layout.addLayout(picker_row)
+        # Row 3: Quick suggestion chips in 2 wrapped rows or compact layout
+        chips_box = QVBoxLayout()
+        chips_box.setSpacing(4)
 
-        # Row 2: Quick suggestion chips
-        chips_row = QHBoxLayout()
-        chips_row.setSpacing(6)
-
+        chips_row1 = QHBoxLayout()
+        chips_row1.setSpacing(6)
         lbl_quick = QLabel("Gợi ý nhanh:", self)
         lbl_quick.setStyleSheet(f"color: {tokens.TEXT_SECONDARY}; font-size: 11px; font-weight: 500;")
-        chips_row.addWidget(lbl_quick)
+        chips_row1.addWidget(lbl_quick)
 
         self.btn_chip_plus_1h = self._create_chip("+1 giờ", self._chip_plus_1h)
-        chips_row.addWidget(self.btn_chip_plus_1h)
+        chips_row1.addWidget(self.btn_chip_plus_1h)
 
         self.btn_chip_tonight = self._create_chip("Tối nay 20:00", self._chip_tonight)
-        chips_row.addWidget(self.btn_chip_tonight)
+        chips_row1.addWidget(self.btn_chip_tonight)
+        chips_row1.addStretch()
+        chips_box.addLayout(chips_row1)
+
+        chips_row2 = QHBoxLayout()
+        chips_row2.setSpacing(6)
+        chips_row2.setContentsMargins(60, 0, 0, 0)  # Indent under chips
 
         self.btn_chip_tomorrow = self._create_chip("Sáng mai 08:00", self._chip_tomorrow)
-        chips_row.addWidget(self.btn_chip_tomorrow)
+        chips_row2.addWidget(self.btn_chip_tomorrow)
 
         self.btn_chip_weekend = self._create_chip("Cuối tuần 09:00", self._chip_weekend)
-        chips_row.addWidget(self.btn_chip_weekend)
+        chips_row2.addWidget(self.btn_chip_weekend)
+        chips_row2.addStretch()
+        chips_box.addLayout(chips_row2)
 
-        chips_row.addStretch()
-        layout.addLayout(chips_row)
+        layout.addLayout(chips_box)
 
-        # Row 3: Live Summary & Validation Notice
+        # Row 4: Live Summary & Validation Notice
         self.lbl_summary = QLabel(self)
         self.lbl_summary.setWordWrap(True)
         self.lbl_summary.setStyleSheet("font-size: 12px; font-weight: 600;")
         layout.addWidget(self.lbl_summary)
 
-        # Row 4: YouTube Notice
+        # Row 5: YouTube Notice
         lbl_notice = QLabel(
             "YouTube sẽ tự động công khai video đúng thời điểm hẹn, bạn không cần giữ ứng dụng chạy.",
             self,

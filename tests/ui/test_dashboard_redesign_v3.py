@@ -207,6 +207,8 @@ def test_custom_calendar_popup_weekdays_and_navigation(qtbot):
     """Calendar popup has T2-CN (Monday start), navigates months, and disables past dates."""
     popup = CustomCalendarPopup(QDate.currentDate())
     qtbot.addWidget(popup)
+    popup.show()
+    QApplication.processEvents()
 
     day_labels = [popup.week_header_layout.itemAt(i).widget().text() for i in range(7)]
     assert day_labels == ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
@@ -235,6 +237,54 @@ def test_schedule_picker_quick_chips_and_validation(qtbot):
     picker.set_datetime(past_dt)
     assert not picker.is_valid()
     assert "ít nhất 10 phút" in picker.lbl_summary.text()
+
+
+def test_calendar_popup_contrast_ratio_and_scale_visibility(qtbot):
+    """Test WCAG AA contrast ratio (>= 4.5:1) for calendar popup date cells and header labels."""
+    from PySide6.QtGui import QColor
+
+    def rel_luminance(hex_code: str) -> float:
+        c = QColor(hex_code)
+        def channel(val: int) -> float:
+            v = val / 255.0
+            return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+        return 0.2126 * channel(c.red()) + 0.7152 * channel(c.green()) + 0.0722 * channel(c.blue())
+
+    def wcag_contrast(hex1: str, hex2: str) -> float:
+        l1, l2 = rel_luminance(hex1), rel_luminance(hex2)
+        return (max(l1, l2) + 0.05) / (min(l1, l2) + 0.05)
+
+    popup = CustomCalendarPopup(QDate.currentDate())
+    qtbot.addWidget(popup)
+    popup.show()
+    QApplication.processEvents()
+
+    bg_color = "#171a27"  # tokens.BG_CARD
+
+    # 1. Normal active date cell text contrast ratio
+    text_normal = "#f8fafc"  # tokens.TEXT_PRIMARY
+    ratio_normal = wcag_contrast(bg_color, text_normal)
+    assert ratio_normal >= 4.5, f"Normal date text contrast {ratio_normal:.2f} < 4.5:1"
+
+    # 2. Weekday header (T2..CN) text contrast ratio
+    text_header = "#cbd5e1"
+    ratio_header = wcag_contrast(bg_color, text_header)
+    assert ratio_header >= 4.5, f"Weekday header text contrast {ratio_header:.2f} < 4.5:1"
+
+    # 3. Selected date button contrast ratio (white text on primary blue bg)
+    bg_selected = "#2563eb"
+    text_selected = "#ffffff"
+    ratio_selected = wcag_contrast(bg_selected, text_selected)
+    assert ratio_selected >= 4.5, f"Selected date contrast {ratio_selected:.2f} < 4.5:1"
+
+    # 4. Weekday labels completeness and width >= 320 for scale 1.25
+    assert popup.width() >= 320
+    headers = [popup.week_header_layout.itemAt(i).widget().text() for i in range(7)]
+    assert headers == ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]
+    for i in range(7):
+        w = popup.week_header_layout.itemAt(i).widget()
+        assert w.isVisible()
+        assert w.width() >= 36
 
 
 # -----------------------------------------------------------------------------

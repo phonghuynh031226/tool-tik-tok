@@ -189,7 +189,7 @@ class DashboardPage(QWidget):
         # Scroll area to comfortably fit all screen sizes
         self.scroll_area = QScrollArea(self)
         self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         outer_layout.addWidget(self.scroll_area)
 
         container = QWidget()
@@ -368,7 +368,7 @@ class DashboardPage(QWidget):
         s2_layout = QVBoxLayout()
         s2_layout.setSpacing(10)
 
-        # Model row + Generate Button (Row 1)
+        # Model row (Row 1)
         ai_row1 = QHBoxLayout()
         ai_row1.setSpacing(10)
 
@@ -380,15 +380,15 @@ class DashboardPage(QWidget):
         self._populate_models()
         self.combo_model.currentIndexChanged.connect(self._on_model_combo_changed)
         ai_row1.addWidget(self.combo_model, stretch=1)
+        s2_layout.addLayout(ai_row1)
+
+        # AI Action Buttons (Row 2): Tạo nội dung AI + Khôi phục gốc
+        ai_row2 = QHBoxLayout()
+        ai_row2.setSpacing(8)
 
         self.btn_generate_ai = AppButton("Tạo nội dung AI", variant="primary", icon_name="creation", parent=self.step2_card)
         self.btn_generate_ai.clicked.connect(self._on_generate_clicked)
-        ai_row1.addWidget(self.btn_generate_ai)
-        s2_layout.addLayout(ai_row1)
-
-        # Secondary Actions (Row 2): Khôi phục gốc (BỎ nút Sao chép)
-        ai_row2 = QHBoxLayout()
-        ai_row2.setSpacing(8)
+        ai_row2.addWidget(self.btn_generate_ai)
 
         self.btn_restore_original = AppButton("Khôi phục gốc", variant="secondary", icon_name="history", parent=self.step2_card)
         self.btn_restore_original.clicked.connect(self._on_restore_original_clicked)
@@ -492,11 +492,11 @@ class DashboardPage(QWidget):
         ch_header.addWidget(self.btn_add_channel)
         s3_layout.addLayout(ch_header)
 
-        # Channels scroll/flow area
+        # Channels list area (Vertical stacking to prevent horizontal overflow)
         self.channels_container = QWidget(self.step3_card)
-        self.channels_cards_layout = QHBoxLayout(self.channels_container)
+        self.channels_cards_layout = QVBoxLayout(self.channels_container)
         self.channels_cards_layout.setContentsMargins(0, 0, 0, 0)
-        self.channels_cards_layout.setSpacing(8)
+        self.channels_cards_layout.setSpacing(6)
         s3_layout.addWidget(self.channels_container)
 
         # Hidden combo_channel for backwards compatibility with tests
@@ -581,8 +581,8 @@ class DashboardPage(QWidget):
         lbl_kids.setProperty("class", "fieldLabel")
         form_layout.addWidget(lbl_kids)
 
-        kids_btn_box = QHBoxLayout()
-        kids_btn_box.setSpacing(16)
+        kids_btn_box = QVBoxLayout()
+        kids_btn_box.setSpacing(6)
         self.radio_kids_yes = QRadioButton("Có, dành cho trẻ em", self.step3_card)
         self.radio_kids_no = QRadioButton("Không, không dành cho trẻ em", self.step3_card)
         self.kids_group = QButtonGroup(self.step3_card)
@@ -593,7 +593,6 @@ class DashboardPage(QWidget):
 
         kids_btn_box.addWidget(self.radio_kids_yes)
         kids_btn_box.addWidget(self.radio_kids_no)
-        kids_btn_box.addStretch()
         form_layout.addLayout(kids_btn_box)
 
         s3_layout.addLayout(form_layout)
@@ -716,13 +715,18 @@ class DashboardPage(QWidget):
 
     def _update_layout_mode(self, width: int) -> None:
         """Switch between 2-column layout and 1-column layout dynamically based on card minimum sizes."""
+        if hasattr(self, "stepper"):
+            self.stepper.set_compact(width < 750)
+
         c1 = self.step1_card.minimumSizeHint().width()
         c2 = self.step2_card.minimumSizeHint().width()
         c3 = self.step3_card.minimumSizeHint().width()
-        col0_min = max(c1, 480)
-        col1_min = max(c2, c3, 500)
+        col0_min = c1
+        col1_min = max(c2, c3)
         spacing = self.steps_grid.spacing()
-        needed_width = max(col0_min + col1_min + spacing + 60, 1100)
+        # Required width for 2 columns: left col + right col + grid spacing + container margins (40) + scrollbar reserve (24)
+        # Threshold of 1020px ensures 2 columns at >=1200 while reflowing cleanly to 1 column at <=1000
+        needed_width = max(col0_min + col1_min + spacing + 64, 1020)
         is_wide = width >= needed_width
         if self._is_wide_layout == is_wide:
             return
