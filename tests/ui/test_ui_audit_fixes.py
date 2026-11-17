@@ -112,13 +112,10 @@ def test_account_card_actions(qtbot, test_container):
     qtbot.addWidget(card1)
     card1.show()
 
-    # For default connected account:
-    # - "Đặt làm mặc định" is hidden because it's already default
-    assert card1.btn_card_set_default.isHidden()
-    # - "Đăng nhập lại" is hidden because it's connected
-    assert card1.btn_card_reconnect.isHidden()
-    # - "Xóa" is visible
-    assert not card1.btn_card_remove.isHidden()
+    actions = [a.text() for a in card1.btn_menu.menu().actions()]
+    assert "Đặt làm mặc định" not in actions
+    assert "Đăng nhập lại" not in actions
+    assert "Xóa tài khoản" in actions
 
     acc_expired = ChannelAccount(
         id="ch-2",
@@ -130,13 +127,10 @@ def test_account_card_actions(qtbot, test_container):
     qtbot.addWidget(card2)
     card2.show()
 
-    # For expired non-default account:
-    # - "Đặt làm mặc định" is visible
-    assert not card2.btn_card_set_default.isHidden()
-    # - "Đăng nhập lại" is visible
-    assert not card2.btn_card_reconnect.isHidden()
-    # - "Xóa" is visible
-    assert not card2.btn_card_remove.isHidden()
+    actions = [a.text() for a in card2.btn_menu.menu().actions()]
+    assert "Đặt làm mặc định" in actions
+    assert "Đăng nhập lại" in actions
+    assert "Xóa tài khoản" in actions
 
 
 def test_add_account_button_icon(qtbot, test_container):

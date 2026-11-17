@@ -48,7 +48,7 @@ def test_add_stats_schedule_sync_via_real_backend_and_ui(accounts, qtbot, monkey
     with caplog.at_level(logging.INFO):
         window.page_youtube_channels._on_add_account()
         qtbot.waitUntil(lambda: container.connection.channel is not None, timeout=5000)
-        qtbot.waitUntil(lambda: window.page_youtube_channels.stat_subscribers.lbl_value.text() == '12,300', timeout=5000)
+        qtbot.waitUntil(lambda: any('12,300' in c.lbl_metrics.text() for c in window.page_youtube_channels._card_widgets if hasattr(c, 'lbl_metrics')), timeout=5000)
         assert container.connection.channel.title == 'RAYKI VN'
         path = tmp_path / 'selected.mp4'
         path.write_bytes(b'mocked-mp4')
@@ -179,12 +179,16 @@ def test_late_channel_data_does_not_replace_the_selected_channel(qtbot):
     qtbot.addWidget(page)
     b = 'UC' + 'b' * 22
     page._selected_account = ChannelAccount(b, 'Selected')
-    page.stat_subscribers.set_value('Unchanged')
+    from app.ui.pages.youtube_channels_page import AccountCardWidget
+    card = AccountCardWidget(ChannelAccount(b, 'Selected'))
+    qtbot.addWidget(card)
+    page._card_widgets = [card]
+    card.lbl_metrics.setText('Unchanged')
     page._on_stats_loaded(ChannelStats(A, 100))
-    assert page.stat_subscribers.lbl_value.text() == 'Unchanged'
+    assert card.lbl_metrics.text() == 'Unchanged'
     page._on_channel_videos_loaded(A, [VideoStats('a' * 11, 'Wrong account')])
     assert page.tbl_videos.rowCount() == 0
     page._on_stats_loaded(ChannelStats(b, 200))
     page._on_channel_videos_loaded(b, [VideoStats('b' * 11, 'Selected account')])
-    assert page.stat_subscribers.lbl_value.text() == '200'
+    assert card.lbl_metrics.text().startswith('200 đăng ký')
     assert page.tbl_videos.item(0, 1).text() == 'Selected account'

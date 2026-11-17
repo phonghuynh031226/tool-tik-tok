@@ -157,10 +157,10 @@ def test_youtube_channels_page(qtbot, test_container):
     qtbot.waitUntil(lambda: len(yt_page._accounts) > 0, timeout=5000)
     assert len(yt_page._accounts) >= 1
 
-    # Verify stats loaded
-    qtbot.waitUntil(lambda: yt_page.stat_views.lbl_value.text() != "—", timeout=5000)
-    assert yt_page.stat_views.lbl_value.text() != "—"
-    assert yt_page.stat_videos.lbl_value.text() != "—"
+    # Metrics belong to each channel; videos require an explicit selection.
+    assert yt_page._selected_account is None
+    qtbot.waitUntil(lambda: "—" not in yt_page._card_widgets[0].lbl_metrics.text(), timeout=5000)
+    yt_page._select_account(yt_page._accounts[0])
 
     # Verify videos loaded
     qtbot.waitUntil(lambda: yt_page.tbl_videos.rowCount() > 0, timeout=5000)
@@ -417,4 +417,4 @@ def test_youtube_channels_page_empty_state_handling(qtbot, test_container):
 
     yt_page._on_accounts_loaded([])
     assert yt_page._selected_account is None
-    assert yt_page.stat_subscribers.lbl_value.text() == "—"
+    assert not yt_page.details_placeholder.isHidden()
