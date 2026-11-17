@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.contracts import UploadRequest
-from app.ui import icons, tokens
+from app.ui import branding, icons, tokens
 from app.ui.components.buttons import AppButton
 
 
@@ -28,7 +28,9 @@ class ConfirmDialog(QDialog):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle(title)
+        self.setWindowIcon(branding.get_app_icon())
+        dialog_title = title if branding.APP_NAME in title else f"{branding.APP_NAME} - {title}"
+        self.setWindowTitle(dialog_title)
         self.setFixedWidth(460)
         self.setModal(True)
 
@@ -92,9 +94,9 @@ class UploadConfirmDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.dry_run = dry_run
-        self.setWindowTitle(
-            "[DRY-RUN] Xác nhận chạy thử" if dry_run else "Xác nhận tải video lên YouTube"
-        )
+        self.setWindowIcon(branding.get_app_icon())
+        base_title = "[DRY-RUN] Xác nhận chạy thử" if dry_run else "Xác nhận tải video lên YouTube"
+        self.setWindowTitle(f"{branding.APP_NAME} - {base_title}")
         self.setFixedWidth(540)
         self.setModal(True)
 

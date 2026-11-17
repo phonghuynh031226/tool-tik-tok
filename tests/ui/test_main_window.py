@@ -3,6 +3,7 @@
 import pytest
 from PySide6.QtWidgets import QStackedWidget
 
+from app.ui import branding
 from app.ui.main_window import MainWindow
 from app.ui.services import ServiceContainer
 
@@ -13,7 +14,7 @@ def test_main_window_init_and_navigation(qtbot):
     qtbot.addWidget(window)
     window.show()
 
-    assert window.windowTitle() == "TikTok YouTube Studio"
+    assert window.windowTitle() == branding.APP_NAME
     assert window.isVisible()
 
     stack = window.findChild(QStackedWidget)

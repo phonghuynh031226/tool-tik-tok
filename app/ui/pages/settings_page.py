@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 
 from app.core.paths import project_root, resolve_download_directory
 from app.ui.model_loading import populate_models
-from app.ui import tokens
+from app.ui import branding, tokens
 from app.ui.components import AppButton, Card, ConfirmDialog
 from app.ui.services import ServiceContainer
 from app.ui.state import JobState
@@ -64,7 +64,8 @@ class SettingsPage(QWidget):
         layout.addWidget(header)
 
         sub = QLabel(
-            "Quản lý toàn diện cấu hình ứng dụng: Tùy chọn chung, Gemini AI, YouTube OAuth, Lưu trữ & Dọn dẹp cache.",
+            f"Quản lý toàn diện cấu hình ứng dụng {branding.APP_NAME} (phiên bản v{branding.APP_VERSION}): "
+            "Tùy chọn chung, Gemini AI, YouTube OAuth, Lưu trữ & Dọn dẹp cache.",
             container,
         )
         sub.setProperty("class", "hintLabel")
@@ -338,6 +339,33 @@ class SettingsPage(QWidget):
 
         ytdlp_card.add_layout(y_layout)
         layout.addWidget(ytdlp_card)
+
+        # =============================================================
+        # 6. ABOUT APPLICATION CARD
+        # =============================================================
+        about_card = Card(title=f"6. Thông tin ứng dụng ({branding.APP_NAME})", parent=container)
+        about_layout = QHBoxLayout()
+        about_layout.setSpacing(16)
+
+        lbl_about_icon = QLabel(about_card)
+        lbl_about_icon.setPixmap(branding.get_logo_pixmap(48))
+        lbl_about_icon.setFixedSize(48, 48)
+        about_layout.addWidget(lbl_about_icon)
+
+        about_text_box = QVBoxLayout()
+        about_text_box.setSpacing(4)
+        lbl_about_title = QLabel(f"{branding.APP_NAME} — Phiên bản v{branding.APP_VERSION}", about_card)
+        lbl_about_title.setStyleSheet("font-weight: 700; font-size: 14px; color: #ffffff;")
+        about_text_box.addWidget(lbl_about_title)
+
+        lbl_about_desc = QLabel(branding.APP_DESCRIPTION, about_card)
+        lbl_about_desc.setProperty("class", "hintLabel")
+        lbl_about_desc.setWordWrap(True)
+        about_text_box.addWidget(lbl_about_desc)
+        about_layout.addLayout(about_text_box, stretch=1)
+
+        about_card.add_layout(about_layout)
+        layout.addWidget(about_card)
 
         layout.addStretch()
         scroll.setWidget(container)

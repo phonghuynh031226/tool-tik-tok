@@ -1,4 +1,4 @@
-"""Icon helper module for TikTok YouTube Studio using QtAwesome.
+"""Icon helper module for Clivo using QtAwesome.
 
 Replaces all unicode emojis with clean, professional vector icons.
 Supports stateful colors (normal, hover, active, disabled).

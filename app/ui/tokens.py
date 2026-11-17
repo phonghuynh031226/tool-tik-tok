@@ -1,4 +1,4 @@
-"""Design tokens for TikTok YouTube Studio.
+"""Design tokens for Clivo.
 
 All measurements follow a 4px/8px grid system.
 Dark theme optimized for desktop clarity, contrast, and elegance.
@@ -34,7 +34,12 @@ TEXT_SECONDARY = "#94a3b8"  # Medium-emphasis labels, secondary info
 TEXT_MUTED = "#64748b"      # Disabled, placeholders, tertiary
 TEXT_INVERTED = "#ffffff"   # On dark/colored backgrounds
 
-# Accent / Brand Colors
+# Clivo Brand Colors (mint, violet blue, navy)
+BRAND_MINT = "#59E3C1"         # Mint accent
+BRAND_VIOLET = "#728BFF"       # Violet blue accent
+BRAND_NAVY = "#0E1424"         # Deep brand navy
+
+# Accent / Functional Colors
 PRIMARY = "#3b82f6"         # Blue brand accent
 PRIMARY_HOVER = "#2563eb"
 PRIMARY_ACTIVE = "#1d4ed8"

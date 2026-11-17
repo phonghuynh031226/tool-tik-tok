@@ -2,6 +2,14 @@
 
 import sys
 
+# Set Windows AppUserModelID so taskbar groups under Clivo and displays official brand icon
+if sys.platform == "win32":
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Clivo.App")
+    except Exception:
+        pass
+
 from PySide6.QtWidgets import QApplication, QMainWindow
 
 try:
@@ -27,7 +35,15 @@ def main() -> int:
     if configure_logging is not None:
         configure_logging(include_app=True)
     application = QApplication(sys.argv)
+    from app.ui.branding import APP_NAME, get_app_icon
+    application.setApplicationName(APP_NAME)
+    application.setApplicationDisplayName(APP_NAME)
+    icon = get_app_icon()
+    if not icon.isNull():
+        application.setWindowIcon(icon)
     window = create_window()
+    if not icon.isNull():
+        window.setWindowIcon(icon)
     window.show()
     return application.exec()
 

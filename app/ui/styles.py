@@ -1,4 +1,4 @@
-"""Dark Mode Theme and Styling for TikTok YouTube Studio.
+"""Dark Mode Theme and Styling for Clivo.
 
 Built completely upon design tokens from app.ui.tokens.
 """
@@ -97,7 +97,8 @@ QPushButton.navBtn:hover {{
 }}
 
 QPushButton.navBtn:checked, QPushButton.navBtn.active {{
-    background-color: {tokens.PRIMARY};
+    background-color: rgba(114, 139, 255, 0.16);
+    border-left: 3px solid {tokens.BRAND_MINT};
     color: {tokens.TEXT_INVERTED};
     font-weight: {tokens.FONT_WEIGHT_SEMIBOLD};
 }}
@@ -116,7 +117,8 @@ QPushButton.navBtnCollapsed:hover {{
 }}
 
 QPushButton.navBtnCollapsed:checked {{
-    background-color: {tokens.PRIMARY};
+    background-color: rgba(114, 139, 255, 0.16);
+    border-left: 3px solid {tokens.BRAND_MINT};
 }}
 
 /* Cards & Containers */
@@ -417,7 +419,7 @@ QProgressBar {{
 }}
 
 QProgressBar::chunk {{
-    background-color: {tokens.PRIMARY};
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {tokens.BRAND_VIOLET}, stop:1 {tokens.BRAND_MINT});
     border-radius: {tokens.RADIUS_SM}px;
 }}
 

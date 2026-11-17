@@ -1,3 +1,4 @@
+from app.ui import branding
 from main import create_window
 
 
@@ -7,6 +8,6 @@ def test_studio_window(qtbot, monkeypatch):
     window = create_window()
     qtbot.addWidget(window)
     window.show()
-    assert window.windowTitle() == 'TikTok YouTube Studio'
+    assert window.windowTitle() == branding.APP_NAME
     assert window.isVisible()
     assert window.centralWidget() is not None

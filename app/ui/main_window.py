@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.contracts import JobStatus
-from app.ui import icons, tokens
+from app.ui import branding, icons, tokens
 from app.ui.components import ToastManager
 from app.ui.pages import (
     DashboardPage, HistoryPage, HistorySchedulePage, SettingsPage,
@@ -24,7 +24,7 @@ from app.ui.styles import apply_app_theme
 
 
 class MainWindow(QMainWindow):
-    """TikTok YouTube Studio main desktop application window."""
+    """Clivo main desktop application window."""
 
     def __init__(
         self,
@@ -32,7 +32,8 @@ class MainWindow(QMainWindow):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("TikTok YouTube Studio")
+        self.setWindowTitle(branding.APP_NAME)
+        self.setWindowIcon(branding.get_app_icon())
         self.setMinimumSize(tokens.WINDOW_MIN_WIDTH, tokens.WINDOW_MIN_HEIGHT)
         self.resize(tokens.WINDOW_DEFAULT_WIDTH, tokens.WINDOW_DEFAULT_HEIGHT)
 
@@ -57,7 +58,8 @@ class MainWindow(QMainWindow):
     def _init_system_tray(self) -> None:
         """Initialize system tray for notifications when window is unfocused."""
         self.tray_icon = QSystemTrayIcon(self)
-        self.tray_icon.setIcon(icons.get_colored_icon("logo", tokens.PRIMARY))
+        self.tray_icon.setIcon(branding.get_app_icon())
+        self.tray_icon.setToolTip(branding.APP_NAME)
         self.tray_icon.setVisible(True)
 
     def _init_ui(self) -> None:
@@ -92,16 +94,17 @@ class MainWindow(QMainWindow):
         self.brand_row = QHBoxLayout()
         self.brand_row.setSpacing(tokens.SPACE_SM)
         self.lbl_logo_icon = QLabel(self.header_frame)
-        self.lbl_logo_icon.setPixmap(icons.get_colored_icon("logo", tokens.PRIMARY).pixmap(24, 24))
+        self.lbl_logo_icon.setPixmap(branding.get_logo_pixmap(28))
+        self.lbl_logo_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.brand_row.addWidget(self.lbl_logo_icon)
 
-        self.lbl_logo_title = QLabel("Studio Pro", self.header_frame)
+        self.lbl_logo_title = QLabel(branding.APP_NAME, self.header_frame)
         self.lbl_logo_title.setObjectName("appLogoTitle")
         self.brand_row.addWidget(self.lbl_logo_title)
         self.brand_row.addStretch()
         self.hf_layout.addLayout(self.brand_row)
 
-        self.lbl_sub = QLabel("TikTok → YouTube", self.header_frame)
+        self.lbl_sub = QLabel(branding.APP_TAGLINE, self.header_frame)
         self.lbl_sub.setObjectName("appSubtitle")
         self.hf_layout.addWidget(self.lbl_sub)
         self.sb_layout.addWidget(self.header_frame)
@@ -124,7 +127,7 @@ class MainWindow(QMainWindow):
 
         self.sb_layout.addStretch()
 
-        # Sidebar Footer: App name, version, and placeholder logo
+        # Sidebar Footer: App name, version, and official logo
         self.footer_frame = QFrame(self.sidebar)
         self.footer_frame.setObjectName("sidebarFooter")
         ft_layout = QVBoxLayout(self.footer_frame)
@@ -136,16 +139,16 @@ class MainWindow(QMainWindow):
 
         self.lbl_footer_logo = QLabel(self.footer_frame)
         self.lbl_footer_logo.setFixedSize(18, 18)
-        self.lbl_footer_logo.setPixmap(icons.get_colored_icon("logo", tokens.TEXT_SECONDARY).pixmap(18, 18))
+        self.lbl_footer_logo.setPixmap(branding.get_logo_pixmap(18))
         self.footer_brand_row.addWidget(self.lbl_footer_logo)
 
-        self.lbl_footer_title = QLabel("TikTok YouTube Studio", self.footer_frame)
+        self.lbl_footer_title = QLabel(branding.APP_NAME, self.footer_frame)
         self.lbl_footer_title.setStyleSheet(f"font-weight: 600; font-size: {tokens.FONT_SIZE_SM}px; color: {tokens.TEXT_PRIMARY};")
         self.footer_brand_row.addWidget(self.lbl_footer_title)
         self.footer_brand_row.addStretch()
         ft_layout.addLayout(self.footer_brand_row)
 
-        self.lbl_footer_version = QLabel("Phiên bản v2.0.0", self.footer_frame)
+        self.lbl_footer_version = QLabel(f"Phiên bản v{branding.APP_VERSION}", self.footer_frame)
         self.lbl_footer_version.setStyleSheet(f"font-size: {tokens.FONT_SIZE_XS}px; color: {tokens.TEXT_MUTED};")
         ft_layout.addWidget(self.lbl_footer_version)
 
@@ -317,7 +320,8 @@ class MainWindow(QMainWindow):
                 "warning": QSystemTrayIcon.MessageIcon.Warning,
                 "error": QSystemTrayIcon.MessageIcon.Critical,
             }.get(toast_type, QSystemTrayIcon.MessageIcon.Information)
-            self.tray_icon.showMessage(title, message, tray_msg_icon, duration_ms)
+            tray_title = f"{branding.APP_NAME} - {title}" if title else branding.APP_NAME
+            self.tray_icon.showMessage(tray_title, message, tray_msg_icon, duration_ms)
 
     # =========================================================================
     # State change toast triggers
