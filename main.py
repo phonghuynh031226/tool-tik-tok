@@ -1,31 +1,25 @@
 """Desktop entry point using the production service container."""
 
 import sys
+from typing import TYPE_CHECKING
 
-from PySide6.QtWidgets import QApplication, QMainWindow
+from app.security.logging import configure_logging, enable_crash_logging
 
-try:
-    from app.security.logging import configure_logging
-except ImportError:
-    try:
-        from pathlib import Path
-        main_repo = Path(__file__).resolve().parent.parent / "tool-tik-tok"
-        if main_repo.exists() and str(main_repo) not in sys.path:
-            sys.path.append(str(main_repo))
-        from app.security.logging import configure_logging
-    except Exception:
-        configure_logging = None
+if TYPE_CHECKING:
+    from PySide6.QtWidgets import QMainWindow
 
 
-def create_window() -> QMainWindow:
+def create_window() -> 'QMainWindow':
     from app.ui.main_window import MainWindow
     window = MainWindow()
     return window
 
 
 def main() -> int:
-    if configure_logging is not None:
-        configure_logging(include_app=True)
+    enable_crash_logging()
+    configure_logging(include_app=True)
+    from PySide6.QtWidgets import QApplication
+
     application = QApplication(sys.argv)
     window = create_window()
     window.show()

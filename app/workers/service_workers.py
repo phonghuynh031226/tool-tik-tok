@@ -17,6 +17,7 @@ from app.contracts import (
 )
 from app.core.cancel import CancelToken
 from app.workers.base import WorkerSignals
+from app.workers.youtube_restore import fetch_accounts, invalidate_accounts, restored_default
 
 logger = logging.getLogger('TikTokYouTubeStudio.events')
 
@@ -291,7 +292,8 @@ class YouTubeConnectWorker(QRunnable):
             return
         try:
             channel = self.service.connect()
-            channel = self.service.get_channel()
+            channel = self.service.get_channel()  # Explicit interactive connection still verifies the chosen channel.
+            invalidate_accounts(self.service)
             logger.info('youtube_connected — đã xác thực kênh')
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
@@ -316,10 +318,12 @@ class YouTubeRestoreWorker(QRunnable):
     @Slot()
     def run(self):
         try:
-            accounts = self.service.list_accounts()
+            accounts = fetch_accounts(self.service, consumer='restore')
             if isinstance(accounts, list):
                 self.signals.accounts_loaded.emit(accounts)
-            channel = self.service.restore_session()
+            # Empty/legacy test backends retain the old silent path. Production
+            # list_accounts migrates/restores accounts itself, including legacy.
+            channel = restored_default(accounts) if isinstance(accounts, list) and accounts else self.service.restore_session()
             if channel is not None and not isinstance(channel, ChannelInfo):
                 raise ValueError('Invalid restored channel')
             if channel is not None:
@@ -350,7 +354,7 @@ class FetchAccountsWorker(QRunnable):
             self.signals.cancelled.emit()
             return
         try:
-            accounts = self.service.list_accounts()
+            accounts = fetch_accounts(self.service, token=self.cancel_token)
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
             else:
@@ -382,6 +386,7 @@ class AddAccountWorker(QRunnable):
             return
         try:
             account = self.service.add_account()
+            invalidate_accounts(self.service)
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
             else:
@@ -414,6 +419,7 @@ class RemoveAccountWorker(QRunnable):
             return
         try:
             self.service.remove_account(self.channel_id)
+            invalidate_accounts(self.service)
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
             else:
@@ -446,6 +452,7 @@ class SetDefaultAccountWorker(QRunnable):
             return
         try:
             self.service.set_default_account(self.channel_id)
+            invalidate_accounts(self.service)
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
             else:
