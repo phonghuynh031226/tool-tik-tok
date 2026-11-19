@@ -438,6 +438,9 @@ class JobState(QObject):
         self._upload_result = None
         self._status = JobStatus.NEW
         self._error_message = None
+        self._publish_at = None
+        self._history_id = None
+        self._dry_run = False
         self.dry_run_result = None
         self.upload_changed.emit(None)
         self.status_changed.emit(self._status.value)

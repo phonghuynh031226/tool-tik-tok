@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
+from app.ui import i18n as _i18n
 from app.contracts import UploadRequest
 from app.ui import branding, icons, tokens
 from app.ui.components.buttons import AppButton
@@ -178,9 +179,7 @@ class UploadConfirmDialog(QDialog):
             self.lbl_privacy_warning.show()
         elif request.publish_at is not None:
             local_dt = request.publish_at.astimezone()
-            self.lbl_privacy_warning.setText(
-                f"LÊN LỊCH PHÁT HÀNH: Video sẽ tải lên ở chế độ Riêng tư, sau đó YouTube sẽ tự động công khai vào lúc {local_dt.strftime('%d/%m/%Y %H:%M')} (giờ máy tính). Bạn không cần mở ứng dụng hay bật máy khi đến giờ hẹn."
-            )
+            _i18n.format_text(self.lbl_privacy_warning, 'LÊN LỊCH PHÁT HÀNH: Video sẽ tải lên ở chế độ Riêng tư, sau đó YouTube sẽ tự động công khai vào lúc {0} (giờ máy tính). Bạn không cần mở ứng dụng hay bật máy khi đến giờ hẹn.', f"{local_dt.strftime('%d/%m/%Y %H:%M')}")
             self.lbl_privacy_warning.setStyleSheet(
                 f"background-color: {tokens.INFO_BG}; color: #bae6fd; padding: 12px; font-weight: bold; "
                 f"border: 1px solid {tokens.INFO_BORDER}; border-radius: {tokens.RADIUS_MD}px;"
@@ -192,19 +191,19 @@ class UploadConfirmDialog(QDialog):
 
         # Warning / Info text
         if dry_run:
-            warn_box = QLabel(
+            warn_box = _i18n.ui(QLabel(
                 "Lưu ý: Đây là chế độ chạy thử an toàn. Quy trình sẽ xác thực toàn bộ dữ liệu, "
                 "mô phỏng tiến trình tải lên nhưng sẽ không thực sự tạo video trên kênh YouTube của bạn."
-            )
+            ))
             warn_box.setStyleSheet(
                 f"color: #93c5fd; font-size: {tokens.FONT_SIZE_SM}px; padding: 10px; "
                 f"background-color: {tokens.INFO_BG}; border: 1px solid {tokens.INFO_BORDER}; border-radius: {tokens.RADIUS_MD}px;"
             )
         else:
-            warn_box = QLabel(
+            warn_box = _i18n.ui(QLabel(
                 "Lưu ý: Thao tác này sẽ tải video trực tiếp lên kênh YouTube của bạn. "
                 "Bạn phải đảm bảo đã kiểm tra nội dung và có toàn quyền sử dụng hợp pháp video này."
-            )
+            ))
             warn_box.setStyleSheet(
                 f"color: #fde68a; font-size: {tokens.FONT_SIZE_SM}px; padding: 10px; "
                 f"background-color: {tokens.WARNING_BG}; border: 1px solid {tokens.WARNING_BORDER}; border-radius: {tokens.RADIUS_MD}px;"
@@ -217,7 +216,7 @@ class UploadConfirmDialog(QDialog):
         btn_layout.setSpacing(tokens.SPACE_SM)
         btn_layout.addStretch()
 
-        self.btn_cancel = AppButton("Hủy bỏ", variant="secondary", parent=self)
+        self.btn_cancel = _i18n.ui(AppButton("Hủy bỏ", variant="secondary", parent=self))
         self.btn_cancel.clicked.connect(self.reject)
         btn_layout.addWidget(self.btn_cancel)
 

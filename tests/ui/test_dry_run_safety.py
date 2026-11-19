@@ -93,13 +93,15 @@ def test_hashtags_and_complete_description_byte_limit(tmp_path):
     assert not state.can_upload()[0]
 
 
-def test_hashtags_are_prefixed_in_both_editors(qtbot):
+def test_hashtags_remain_on_dashboard_and_tools_sync_title_description(qtbot):
     from app.contracts import GeneratedContent
     window = MainWindow(ServiceContainer.create_fake())
     qtbot.addWidget(window)
     window.job_state.set_generated_content(GeneratedContent('Title', 'Desc', ['Python', 'GeminiAPI'], []))
     assert window.page_dashboard.edit_hashtags.text() == '#Python #GeminiAPI'
-    assert window.page_ai.edit_hashtags.text() == '#Python #GeminiAPI'
+    assert not hasattr(window.page_ai, 'edit_hashtags')
+    assert window.page_ai.edit_title.text() == 'Title'
+    assert window.page_ai.edit_desc.toPlainText() == 'Desc'
 
 
 def test_old_dry_run_history_is_not_shown_as_published(qtbot):
@@ -109,7 +111,7 @@ def test_old_dry_run_history_is_not_shown_as_published(qtbot):
     qtbot.addWidget(window)
     page = window.page_history
     page.refresh_history()
-    assert page.table.item(0, 2).text() == 'Chạy thử'
+    assert page.table.item(0, 3).text() == 'Chạy thử'
     assert not page._current_records[0]['url']
     assert not page._current_records[0]['youtube_video_id']
 

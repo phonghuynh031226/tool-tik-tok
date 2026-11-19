@@ -48,7 +48,7 @@ def test_add_stats_schedule_sync_via_real_backend_and_ui(accounts, qtbot, monkey
     with caplog.at_level(logging.INFO):
         window.page_youtube_channels._on_add_account()
         qtbot.waitUntil(lambda: container.connection.channel is not None, timeout=5000)
-        qtbot.waitUntil(lambda: window.page_youtube_channels.stat_subscribers.lbl_value.text() == '12,300', timeout=5000)
+        qtbot.waitUntil(lambda: any('12,300' in c.lbl_metrics.text() for c in window.page_youtube_channels._card_widgets if hasattr(c, 'lbl_metrics')), timeout=5000)
         assert container.connection.channel.title == 'RAYKI VN'
         path = tmp_path / 'selected.mp4'
         path.write_bytes(b'mocked-mp4')
@@ -61,17 +61,17 @@ def test_add_stats_schedule_sync_via_real_backend_and_ui(accounts, qtbot, monkey
         page.dt_publish.setDateTime(datetime.now() + timedelta(hours=2))
         assert page.btn_upload.isEnabled()
         page._on_upload_clicked()
-        qtbot.waitUntil(lambda: window.job_state.status == JobStatus.SCHEDULED and not container.connection.busy, timeout=5000)
+        qtbot.waitUntil(lambda: window.job_state.status == JobStatus.NEW and len(history.list()) == 1 and not container.connection.busy, timeout=5000)
         request_body = clients[A][0].videos.return_value.insert.call_args.kwargs['body']
         assert request_body['status']['privacyStatus'] == 'private'
         assert request_body['status']['publishAt'].endswith('Z')
         assert window.job_state.channel_id == A
-        assert 'chưa xác nhận công khai' in window.lbl_active_job_status.text()
-        assert 'Đã lên lịch' in page.lbl_upload_status.text()
+        assert page.upload_result_box.isHidden()
+        assert 'hẹn giờ' in window.toast_manager.toasts[-1].title_text.lower()
         assert len(history.list()) == 1
         history_page = window.page_history
         history_page.refresh_scheduled()
-        assert history_page.tbl_scheduled.rowCount() == 1
+        assert history_page.table.rowCount() == 1
         history_page.btn_refresh_scheduled.click()
         qtbot.waitUntil(lambda: history_page.btn_sync_scheduled.isEnabled(), timeout=5000)
         assert history.list_scheduled()[0]['uploaded_at'] is None
@@ -82,7 +82,7 @@ def test_add_stats_schedule_sync_via_real_backend_and_ui(accounts, qtbot, monkey
         record = history.list()[0]
         assert record['processing_status'] == JobStatus.UPLOADED
         assert record['schedule_public_confirmed'] is True and record['uploaded_at']
-        assert history_page.tbl_scheduled.cellWidget(0, 5).lbl_text.text() == 'Đã công khai'
+        assert history_page.table.cellWidget(0, 3).lbl_text.text() == 'Đã công khai'
     assert str(history.path) == window.page_settings.lbl_db_path.text()
     assert 'CHẾ ĐỘ GIẢ LẬP' not in ''.join(label.text() for label in window.findChildren(__import__('PySide6.QtWidgets', fromlist=['QLabel']).QLabel))
     for secret in ('access-' + A, 'refresh-' + A, 'test-client-secret'):
@@ -179,12 +179,16 @@ def test_late_channel_data_does_not_replace_the_selected_channel(qtbot):
     qtbot.addWidget(page)
     b = 'UC' + 'b' * 22
     page._selected_account = ChannelAccount(b, 'Selected')
-    page.stat_subscribers.set_value('Unchanged')
+    from app.ui.pages.youtube_channels_page import AccountCardWidget
+    card = AccountCardWidget(ChannelAccount(b, 'Selected'))
+    qtbot.addWidget(card)
+    page._card_widgets = [card]
+    card.lbl_metrics.setText('Unchanged')
     page._on_stats_loaded(ChannelStats(A, 100))
-    assert page.stat_subscribers.lbl_value.text() == 'Unchanged'
+    assert card.lbl_metrics.text() == 'Unchanged'
     page._on_channel_videos_loaded(A, [VideoStats('a' * 11, 'Wrong account')])
     assert page.tbl_videos.rowCount() == 0
     page._on_stats_loaded(ChannelStats(b, 200))
     page._on_channel_videos_loaded(b, [VideoStats('b' * 11, 'Selected account')])
-    assert page.stat_subscribers.lbl_value.text() == '200'
+    assert card.lbl_metrics.text().startswith('200 đăng ký')
     assert page.tbl_videos.item(0, 1).text() == 'Selected account'

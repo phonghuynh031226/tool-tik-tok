@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui import icons, tokens
+from app.ui import i18n as _i18n
 
 
 class Card(QFrame):
@@ -60,17 +61,17 @@ class Card(QFrame):
                 title_box.setSpacing(2)
                 title_box.setContentsMargins(0, 0, 0, 0)
 
-                title_label = QLabel(title)
+                title_label = _i18n.bind(QLabel(title), title)
                 title_label.setProperty("class", "stepTitle")
                 title_box.addWidget(title_label)
 
                 if subtitle:
-                    sub_label = QLabel(subtitle)
+                    sub_label = _i18n.bind(QLabel(subtitle), subtitle)
                     sub_label.setProperty("class", "stepDesc")
-                    sub_label.setWordWrap(True)
+                    sub_label.setWordWrap(False)
                     title_box.addWidget(sub_label)
 
-                header_layout.addLayout(title_box)
+                header_layout.addLayout(title_box, 1)
 
             header_layout.addStretch()
 

@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QProgressBar, QPushButton, QScrollArea, QTextEdit, QVBoxLayout, QWidget,
 )
 
+from app.ui import i18n as _i18n
 from app.contracts import GeneratedContent
 from app.services.gemini import select_preferred_model
 from app.ui.components import AppButton, Card
@@ -53,14 +54,14 @@ class AIPage(QWidget):
         layout.setSpacing(18)
 
         # Header
-        header = QLabel("Tạo Nội Dung Bằng Trí Tuệ Nhân Tạo (Gemini)", container)
+        header = _i18n.ui(QLabel("Tạo Nội Dung Bằng Trí Tuệ Nhân Tạo (Gemini)", container))
         header.setStyleSheet("font-size: 20px; font-weight: 700; color: #ffffff;")
         layout.addWidget(header)
 
-        sub = QLabel(
+        sub = _i18n.ui(QLabel(
             "Tự động viết lại tiêu đề hấp dẫn, mô tả chuẩn SEO, tạo hashtag và thẻ gắn cho YouTube.",
             container,
-        )
+        ))
         sub.setProperty("class", "hintLabel")
         layout.addWidget(sub)
 
@@ -69,7 +70,7 @@ class AIPage(QWidget):
         s_layout = QGridLayout()
         s_layout.setSpacing(12)
 
-        lbl_model = QLabel("Mô hình AI:", settings_card)
+        lbl_model = _i18n.ui(QLabel("Mô hình AI:", settings_card))
         lbl_model.setProperty("class", "fieldLabel")
         s_layout.addWidget(lbl_model, 0, 0)
 
@@ -91,28 +92,28 @@ class AIPage(QWidget):
             self.combo_model.setCurrentIndex(idx)
         s_layout.addWidget(self.combo_model, 0, 1)
 
-        lbl_tone = QLabel("Phong cách viết:", settings_card)
+        lbl_tone = _i18n.ui(QLabel("Phong cách viết:", settings_card))
         lbl_tone.setProperty("class", "fieldLabel")
         s_layout.addWidget(lbl_tone, 0, 2)
 
         self.combo_tone = QComboBox(settings_card)
-        self.combo_tone.addItem("Hấp dẫn & Cuốn hút (Click-worthy)", "engaging")
-        self.combo_tone.addItem("Hài hước & Thân thiện", "humorous")
-        self.combo_tone.addItem("Chuyên nghiệp & Chuẩn SEO", "seo")
+        _i18n.add_item(self.combo_tone, "Hấp dẫn & Cuốn hút (Click-worthy)", "engaging")
+        _i18n.add_item(self.combo_tone, "Hài hước & Thân thiện", "humorous")
+        _i18n.add_item(self.combo_tone, "Chuyên nghiệp & Chuẩn SEO", "seo")
         s_layout.addWidget(self.combo_tone, 0, 3)
 
         settings_card.add_layout(s_layout)
 
         btn_row = QHBoxLayout()
-        self.btn_generate = AppButton("Tạo nội dung AI ngay", variant="primary", icon_name="creation", parent=settings_card)
+        self.btn_generate = _i18n.ui(AppButton("Tạo nội dung AI ngay", variant="primary", icon_name="creation", parent=settings_card))
         self.btn_generate.clicked.connect(self._on_generate)
         btn_row.addWidget(self.btn_generate)
 
-        self.btn_restore = AppButton("Khôi phục tiêu đề gốc", variant="secondary", icon_name="history", parent=settings_card)
+        self.btn_restore = _i18n.ui(AppButton("Khôi phục tiêu đề gốc", variant="secondary", icon_name="history", parent=settings_card))
         self.btn_restore.clicked.connect(lambda: self.state.restore_original())
         btn_row.addWidget(self.btn_restore)
 
-        self.btn_copy = AppButton("Sao chép tất cả", variant="secondary", icon_name="content-copy", parent=settings_card)
+        self.btn_copy = _i18n.ui(AppButton("Sao chép tất cả", variant="secondary", icon_name="content-copy", parent=settings_card))
         self.btn_copy.clicked.connect(self._on_copy_all)
         btn_row.addWidget(self.btn_copy)
         btn_row.addStretch()
@@ -133,28 +134,28 @@ class AIPage(QWidget):
         e_layout.setSpacing(12)
 
         title_header = QHBoxLayout()
-        lbl_t = QLabel("Tiêu đề YouTube (Tối đa 100 ký tự):", editor_card)
+        lbl_t = _i18n.ui(QLabel("Tiêu đề YouTube (Tối đa 100 ký tự):", editor_card))
         lbl_t.setProperty("class", "fieldLabel")
         title_header.addWidget(lbl_t)
         title_header.addStretch()
 
-        self.lbl_counter = QLabel("0/100 ký tự", editor_card)
+        self.lbl_counter = _i18n.ui(QLabel("0/100 ký tự", editor_card))
         self.lbl_counter.setProperty("class", "charCounter")
         title_header.addWidget(self.lbl_counter)
         e_layout.addLayout(title_header)
 
         self.edit_title = QLineEdit(editor_card)
-        self.edit_title.setPlaceholderText("Tiêu đề video...")
+        _i18n.placeholder(self.edit_title, "Tiêu đề video...")
         self.edit_title.textChanged.connect(self._on_title_changed)
         e_layout.addWidget(self.edit_title)
 
-        lbl_d = QLabel("Mô tả video:", editor_card)
+        lbl_d = _i18n.ui(QLabel("Mô tả video:", editor_card))
         lbl_d.setProperty("class", "fieldLabel")
         e_layout.addWidget(lbl_d)
 
         self.edit_desc = QTextEdit(editor_card)
         self.edit_desc.setMinimumHeight(140)
-        self.edit_desc.setPlaceholderText("Mô tả chi tiết video...")
+        _i18n.placeholder(self.edit_desc, "Mô tả chi tiết video...")
         self.edit_desc.textChanged.connect(lambda: setattr(self.state, "description", self.edit_desc.toPlainText()))
         e_layout.addWidget(self.edit_desc)
 
@@ -170,7 +171,7 @@ class AIPage(QWidget):
         self.edit_hashtags.textChanged.connect(self._on_hashtags_changed)
         tag_grid.addWidget(self.edit_hashtags, 1, 0)
 
-        lbl_tg = QLabel("Thẻ tìm kiếm (Tags):", editor_card)
+        lbl_tg = _i18n.ui(QLabel("Thẻ tìm kiếm (Tags):", editor_card))
         lbl_tg.setProperty("class", "fieldLabel")
         tag_grid.addWidget(lbl_tg, 0, 1)
 
@@ -216,7 +217,7 @@ class AIPage(QWidget):
 
     def _update_counter(self, text: str) -> None:
         c = len(text)
-        self.lbl_counter.setText(f"{c}/100 ký tự")
+        _i18n.format_text(self.lbl_counter, '{0}/100 ký tự', f'{c}')
         if c > 100:
             self.lbl_counter.setProperty("class", "charCounterDanger")
         elif c >= 90:

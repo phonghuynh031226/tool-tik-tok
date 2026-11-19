@@ -86,33 +86,24 @@ def test_tools_page_tiktok_downloader(qtbot, test_container, tmp_path):
     window.btn_nav_tools.click()
     assert window.stack.currentIndex() == 1
 
-    # Enter URL and simulate file pick
-    test_file = tmp_path / "offline_video.mp4"
-    test_file.write_bytes(b"dummy mp4 binary")
-
-    with patch.object(tools, "_on_pick_file") as mock_pick:
-        tools.btn_pick_file.click()
-        mock_pick.assert_called_once()
-
-    # Manually append an item to simulate downloaded list
-    row = tools.tbl_downloads.rowCount()
-    tools.tbl_downloads.insertRow(row)
-    tools.tbl_downloads.setItem(row, 0, tools.tbl_downloads.item(row, 0) or QTableWidget().item(0, 0))
-    tools._downloaded_files.append({
-        "video_id": "vid-direct-101",
-        "title": "Direct Downloaded Video",
-        "duration": "45s",
-        "size": "5.2 MB",
-        "path": str(test_file),
-        "meta": None,
-    })
-
-    # Select and load to main job
-    tools.tbl_downloads.selectRow(0)
-    tools.btn_load_to_job.click()
-
-    assert window.job_state.local_video_path == test_file
-    assert window.job_state.title == "Direct Downloaded Video"
+    # Standalone download saves to the chosen folder without creating a job/list.
+    from app.contracts import DownloadResult
+    def download(meta, dest_dir, on_progress, cancel_token):
+        path = dest_dir / "downloaded.mp4"
+        path.write_bytes(b"mocked-mp4")
+        on_progress(1.0)
+        return DownloadResult(path, path.stat().st_size, "a" * 64, 5, 720, 1280)
+    test_container.tiktok.download = Mock(side_effect=download)
+    messages = []
+    tools._notify = lambda *args: messages.append(args)
+    tools.edit_download_dir.setText(str(tmp_path))
+    tools.input_url.setText("https://www.tiktok.com/@demo/video/1234567890")
+    tools.btn_download.click()
+    qtbot.waitUntil(lambda: bool(tools.lbl_download_result.text()) or bool(messages), timeout=5000)
+    assert tools.lbl_download_result.text(), messages
+    assert list(tmp_path.glob("*.mp4"))
+    assert window.job_state.local_video_path is None
+    assert not hasattr(tools, "tbl_downloads")
 
 
 def test_tools_page_ai_standalone(qtbot, test_container):
@@ -122,10 +113,8 @@ def test_tools_page_ai_standalone(qtbot, test_container):
     tools = window.page_tools
 
     # Switch to tab 2 (Nội dung AI)
-    tools.tab_widget.setCurrentIndex(1)
 
     tools.edit_ai_orig_title.setText("Video hướng dẫn nấu phở bò chuẩn vị")
-    tools.edit_ai_orig_desc.setPlainText("Bí quyết nước dùng trong veo và ngọt thanh tự nhiên")
 
     # Click generate AI
     tools.btn_generate_ai.click()
@@ -135,12 +124,14 @@ def test_tools_page_ai_standalone(qtbot, test_container):
 
     assert len(tools.edit_title.text()) > 0
     assert len(tools.edit_desc.toPlainText()) > 0
-    assert "#" in tools.edit_hashtags.text()
-
-    # Apply to main job
-    tools.btn_apply_to_job.click()
-    assert window.job_state.title == tools.edit_title.text()
-    assert window.job_state.description == tools.edit_desc.toPlainText()
+    assert not hasattr(tools, "edit_hashtags")
+    assert not hasattr(tools, "btn_apply_to_job")
+    assert window.job_state.title == ""
+    tools.btn_copy_title.click()
+    from PySide6.QtGui import QGuiApplication
+    clip_text = QGuiApplication.clipboard().text()
+    if clip_text:
+        assert clip_text == tools.edit_title.text()
 
 
 def test_youtube_channels_page(qtbot, test_container):
@@ -157,10 +148,10 @@ def test_youtube_channels_page(qtbot, test_container):
     qtbot.waitUntil(lambda: len(yt_page._accounts) > 0, timeout=5000)
     assert len(yt_page._accounts) >= 1
 
-    # Verify stats loaded
-    qtbot.waitUntil(lambda: yt_page.stat_views.lbl_value.text() != "—", timeout=5000)
-    assert yt_page.stat_views.lbl_value.text() != "—"
-    assert yt_page.stat_videos.lbl_value.text() != "—"
+    # Metrics belong to each channel; videos require an explicit selection.
+    assert yt_page._selected_account is None
+    qtbot.waitUntil(lambda: "—" not in yt_page._card_widgets[0].lbl_metrics.text(), timeout=5000)
+    yt_page._select_account(yt_page._accounts[0])
 
     # Verify videos loaded
     qtbot.waitUntil(lambda: yt_page.tbl_videos.rowCount() > 0, timeout=5000)
@@ -200,17 +191,16 @@ def test_history_scheduled_tab(qtbot, test_container):
     assert window.stack.currentIndex() == 3
 
     # Switch to Scheduled Tab
-    history_page.tab_widget.setCurrentIndex(1)
     history_page.refresh_scheduled()
 
-    assert history_page.tbl_scheduled.rowCount() >= 1
+    assert history_page.table.rowCount() >= 1
 
     # Verify Title and Channel
-    title_item = history_page.tbl_scheduled.item(0, 1)
+    title_item = history_page.table.item(0, 0)
     assert title_item.text() == "Video lên lịch tự động"
 
     # Verify Remaining time countdown contains "Còn"
-    countdown_item = history_page.tbl_scheduled.item(0, 4)
+    countdown_item = history_page.table.item(0, 2)
     assert "Còn" in countdown_item.text()
 
     # Test sync scheduled button
@@ -381,9 +371,10 @@ def test_overview_scheduled_upload_flow_and_history_sync(qtbot, test_container, 
     )
     page._on_upload_finished(result)
 
-    # Check status message
-    assert "Đã lên lịch phát hành" in page.lbl_upload_status.text()
-    assert "đã công khai" not in page.lbl_upload_status.text()
+    # Success is a floating notice; the form is ready for a new job.
+    assert window.job_state.status == JobStatus.NEW
+    assert page.upload_result_box.isHidden()
+    assert "hẹn giờ" in window.toast_manager.toasts[-1].title_text.lower()
 
     # Verify record in scheduled list
     scheduled_items = test_container.history.list_scheduled()
@@ -392,9 +383,8 @@ def test_overview_scheduled_upload_flow_and_history_sync(qtbot, test_container, 
 
     # Switch to History page and check Scheduled tab
     window.btn_nav_history.click()
-    window.page_history.tab_widget.setCurrentIndex(1)
     window.page_history.refresh_scheduled()
-    assert window.page_history.tbl_scheduled.rowCount() >= 1
+    assert window.page_history.table.rowCount() >= 1
 
 
 def test_settings_real_db_path_displayed(qtbot, test_container):
@@ -417,4 +407,4 @@ def test_youtube_channels_page_empty_state_handling(qtbot, test_container):
 
     yt_page._on_accounts_loaded([])
     assert yt_page._selected_account is None
-    assert yt_page.stat_subscribers.lbl_value.text() == "—"
+    assert not yt_page.details_placeholder.isHidden()

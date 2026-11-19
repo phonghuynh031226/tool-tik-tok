@@ -7,7 +7,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QThreadPool, QUrl, Qt, Slot
+from PySide6.QtCore import QThreadPool, QUrl, Qt, Slot, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout,
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QVBoxLayout, QWidget,
 )
 
+from app.ui import i18n as _i18n
 from app.core.paths import project_root, resolve_download_directory
 from app.ui.model_loading import populate_models
 from app.ui import branding, tokens
@@ -26,6 +27,8 @@ from app.workers import YtDlpUpdateWorker
 
 class SettingsPage(QWidget):
     """Application configuration and credentials management."""
+
+    appearance_changed = Signal()
 
     def __init__(
         self,
@@ -59,15 +62,14 @@ class SettingsPage(QWidget):
         layout.setSpacing(20)
 
         # Header
-        header = QLabel("Cài Đặt Hệ Thống", container)
+        header = _i18n.ui(QLabel("Cài Đặt Hệ Thống", container))
         header.setStyleSheet("font-size: 20px; font-weight: 700; color: #ffffff;")
         layout.addWidget(header)
 
-        sub = QLabel(
-            f"Quản lý toàn diện cấu hình ứng dụng {branding.APP_NAME} (phiên bản v{branding.APP_VERSION}): "
-            "Tùy chọn chung, Gemini AI, YouTube OAuth, Lưu trữ & Dọn dẹp cache.",
+        sub = _i18n.formatted(QLabel(
+            '',
             container,
-        )
+        ), 'Quản lý toàn diện cấu hình ứng dụng {0} (phiên bản v{1}): Tùy chọn chung, Gemini AI, YouTube OAuth, Lưu trữ & Dọn dẹp cache.', f'{branding.APP_NAME}', f'{branding.APP_VERSION}')
         sub.setProperty("class", "hintLabel")
         sub.setWordWrap(True)
         layout.addWidget(sub)
@@ -80,33 +82,33 @@ class SettingsPage(QWidget):
         g_layout.setSpacing(12)
 
         # Ngôn ngữ UI
-        lbl_lang = QLabel("Ngôn ngữ giao diện:", gen_card)
+        lbl_lang = _i18n.ui(QLabel("Ngôn ngữ giao diện:", gen_card))
         lbl_lang.setProperty("class", "fieldLabel")
         g_layout.addWidget(lbl_lang, 0, 0)
 
         self.combo_lang = QComboBox(gen_card)
-        self.combo_lang.addItem("Tiếng Việt (Mặc định)", "vi")
+        _i18n.add_item(self.combo_lang, "Tiếng Việt (Mặc định)", "vi")
         self.combo_lang.addItem("English", "en")
         self.combo_lang.currentIndexChanged.connect(
-            lambda: self.services.settings.set("ui_language", self.combo_lang.currentData())
+            self._appearance_changed
         )
         g_layout.addWidget(self.combo_lang, 1, 0)
 
         # Giao diện (Theme)
-        lbl_theme = QLabel("Chế độ hiển thị (Theme):", gen_card)
+        lbl_theme = _i18n.ui(QLabel("Chế độ hiển thị (Theme):", gen_card))
         lbl_theme.setProperty("class", "fieldLabel")
         g_layout.addWidget(lbl_theme, 0, 1)
 
         self.combo_theme = QComboBox(gen_card)
-        self.combo_theme.addItem("Dark Mode (Tối chuyên nghiệp - Mặc định)", "dark")
-        self.combo_theme.addItem("Light Mode (Sáng)", "light")
+        _i18n.add_item(self.combo_theme, "Dark Mode (Tối chuyên nghiệp - Mặc định)", "dark")
+        _i18n.add_item(self.combo_theme, "Light Mode (Sáng)", "light")
         self.combo_theme.currentIndexChanged.connect(
-            lambda: self.services.settings.set("ui_theme", self.combo_theme.currentData())
+            self._appearance_changed
         )
         g_layout.addWidget(self.combo_theme, 1, 1)
 
         # Thư mục tải về
-        lbl_dir = QLabel("Thư mục lưu video tải về:", gen_card)
+        lbl_dir = _i18n.ui(QLabel("Thư mục lưu video tải về:", gen_card))
         lbl_dir.setProperty("class", "fieldLabel")
         g_layout.addWidget(lbl_dir, 2, 0, 1, 2)
 
@@ -118,22 +120,34 @@ class SettingsPage(QWidget):
         self.edit_download_dir.setText(str(initial_dir))
         dir_box.addWidget(self.edit_download_dir, stretch=1)
 
-        self.btn_browse_dir = AppButton("Chọn thư mục...", variant="secondary", icon_name="folder-open", parent=gen_card)
+        self.btn_browse_dir = _i18n.ui(AppButton("Chọn thư mục...", variant="secondary", icon_name="folder-open", parent=gen_card))
         self.btn_browse_dir.clicked.connect(self._browse_dir)
         dir_box.addWidget(self.btn_browse_dir)
         g_layout.addLayout(dir_box, 3, 0, 1, 2)
 
         # Privacy mặc định
-        lbl_def_priv = QLabel("Chế độ hiển thị mặc định cho YouTube:", gen_card)
+        lbl_def_priv = _i18n.ui(QLabel("Chế độ hiển thị mặc định cho YouTube:", gen_card))
         lbl_def_priv.setProperty("class", "fieldLabel")
-        g_layout.addWidget(lbl_def_priv, 4, 0, 1, 2)
+        g_layout.addWidget(lbl_def_priv, 4, 0)
 
         self.combo_def_privacy = QComboBox(gen_card)
-        self.combo_def_privacy.addItem("Riêng tư (Private) - Khuyên dùng an toàn", "private")
-        self.combo_def_privacy.addItem("Không công khai (Unlisted)", "unlisted")
-        self.combo_def_privacy.addItem("Công khai (Public)", "public")
+        _i18n.add_item(self.combo_def_privacy, "Riêng tư (Private) - Khuyên dùng an toàn", "private")
+        _i18n.add_item(self.combo_def_privacy, "Không công khai (Unlisted)", "unlisted")
+        _i18n.add_item(self.combo_def_privacy, "Công khai (Public)", "public")
         self.combo_def_privacy.currentIndexChanged.connect(self._on_def_privacy_changed)
-        g_layout.addWidget(self.combo_def_privacy, 5, 0, 1, 2)
+        g_layout.addWidget(self.combo_def_privacy, 5, 0)
+
+        # Đối tượng xem mặc định
+        lbl_def_kids = _i18n.ui(QLabel("Đối tượng người xem mặc định:", gen_card))
+        lbl_def_kids.setProperty("class", "fieldLabel")
+        g_layout.addWidget(lbl_def_kids, 4, 1)
+
+        self.combo_def_made_for_kids = QComboBox(gen_card)
+        _i18n.add_item(self.combo_def_made_for_kids, "Không chọn trước (Bắt buộc chọn mỗi lần)", "")
+        _i18n.add_item(self.combo_def_made_for_kids, "Không, không dành cho trẻ em (Khuyên dùng)", "no")
+        _i18n.add_item(self.combo_def_made_for_kids, "Có, dành cho trẻ em", "yes")
+        self.combo_def_made_for_kids.currentIndexChanged.connect(self._on_def_kids_changed)
+        g_layout.addWidget(self.combo_def_made_for_kids, 5, 1)
 
         gen_card.add_layout(g_layout)
         layout.addWidget(gen_card)
@@ -145,33 +159,33 @@ class SettingsPage(QWidget):
         api_layout = QGridLayout()
         api_layout.setSpacing(12)
 
-        lbl_api = QLabel("Khóa bí mật Gemini API Key (ẩn an toàn):", api_card)
+        lbl_api = _i18n.ui(QLabel("Khóa bí mật Gemini API Key (ẩn an toàn):", api_card))
         lbl_api.setProperty("class", "fieldLabel")
         api_layout.addWidget(lbl_api, 0, 0, 1, 3)
 
         api_input_row = QHBoxLayout()
         self.edit_api_key = QLineEdit(api_card)
         self.edit_api_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.edit_api_key.setPlaceholderText("Nhập khóa API (lưu trữ mã hóa qua SecretStore)...")
+        _i18n.placeholder(self.edit_api_key, "Nhập khóa API (lưu trữ mã hóa qua SecretStore)...")
         api_input_row.addWidget(self.edit_api_key, stretch=1)
 
-        self.btn_toggle_key = AppButton("Hiện", variant="secondary", icon_name="eye", parent=api_card)
+        self.btn_toggle_key = _i18n.ui(AppButton("Hiện", variant="secondary", icon_name="eye", parent=api_card))
         self.btn_toggle_key.setFixedWidth(80)
         self.btn_toggle_key.clicked.connect(self._toggle_key_visibility)
         api_input_row.addWidget(self.btn_toggle_key)
 
-        self.btn_save_key = AppButton("Lưu khóa", variant="primary", icon_name="content-save", parent=api_card)
+        self.btn_save_key = _i18n.ui(AppButton("Lưu khóa", variant="primary", icon_name="content-save", parent=api_card))
         self.btn_save_key.clicked.connect(self._save_api_key)
         api_input_row.addWidget(self.btn_save_key)
 
-        self.btn_test_gemini = AppButton("Kiểm tra kết nối", variant="secondary", icon_name="check-circle", parent=api_card)
+        self.btn_test_gemini = _i18n.ui(AppButton("Kiểm tra kết nối", variant="secondary", icon_name="check-circle", parent=api_card))
         self.btn_test_gemini.clicked.connect(self._test_gemini)
         api_input_row.addWidget(self.btn_test_gemini)
 
         api_layout.addLayout(api_input_row, 1, 0, 1, 3)
 
         # Model selection
-        lbl_model = QLabel("Mô hình AI:", api_card)
+        lbl_model = _i18n.ui(QLabel("Mô hình AI:", api_card))
         lbl_model.setProperty("class", "fieldLabel")
         api_layout.addWidget(lbl_model, 2, 0)
 
@@ -180,31 +194,48 @@ class SettingsPage(QWidget):
         self.combo_gemini_model.currentIndexChanged.connect(
             lambda: self.services.settings.set("gemini_model", self.combo_gemini_model.currentData())
         )
-        api_layout.addWidget(self.combo_gemini_model, 2, 1, 1, 2)
+        model_box = QVBoxLayout()
+        model_row = QHBoxLayout()
+        model_row.addWidget(self.combo_gemini_model, 1)
+        self.btn_default_model = _i18n.ui(AppButton('Đặt làm mặc định', variant='secondary', icon_name='check', parent=api_card))
+        self.btn_default_model.clicked.connect(self._set_default_model)
+        model_row.addWidget(self.btn_default_model)
+        model_box.addLayout(model_row)
+        self.lbl_default_model = QLabel(api_card)
+        self.lbl_default_model.setWordWrap(True)
+        self.lbl_default_model.setTextFormat(Qt.TextFormat.PlainText)
+        self.lbl_default_model.setProperty('class', 'hintLabel')
+        model_box.addWidget(self.lbl_default_model)
+        self._refresh_default_model_hint()
+        api_layout.addLayout(model_box, 2, 1, 1, 2)
 
         # Files API video analysis flag
         chk_box = QVBoxLayout()
         chk_box.setSpacing(2)
-        self.chk_analyze_video = QCheckBox("Phân tích video thật qua Files API", api_card)
+        self.chk_analyze_video = _i18n.ui(QCheckBox("Phân tích nội dung MP4 bằng Gemini (Files API)", api_card))
         self.chk_analyze_video.toggled.connect(self._on_analyze_video_toggled)
         chk_box.addWidget(self.chk_analyze_video)
 
-        lbl_chk_hint = QLabel("(Mặc định tắt; chỉ bật khi cần phân tích trực quan file MP4)", api_card)
+        lbl_chk_hint = _i18n.ui(QLabel("Tắt: dùng tiêu đề và mô tả gốc. Bật: gửi MP4 lên Google để AI phân tích video; có thể tốn thêm thời gian và hạn mức.", api_card))
         lbl_chk_hint.setStyleSheet(f"font-size: 11px; color: {tokens.TEXT_MUTED}; margin-left: 26px;")
         lbl_chk_hint.setWordWrap(True)
         chk_box.addWidget(lbl_chk_hint)
         api_layout.addLayout(chk_box, 3, 0, 1, 3)
 
         # Custom Prompt Template
-        lbl_prompt = QLabel("Mẫu Prompt tùy chỉnh (để trống để dùng mặc định chuẩn SEO):", api_card)
+        lbl_prompt = _i18n.ui(QLabel("Hướng dẫn AI viết tiêu đề và mô tả (tùy chọn):", api_card))
         lbl_prompt.setProperty("class", "fieldLabel")
         api_layout.addWidget(lbl_prompt, 4, 0, 1, 3)
 
         self.edit_prompt = QTextEdit(api_card)
-        self.edit_prompt.setPlaceholderText("Nhập prompt mẫu tùy chỉnh...")
+        _i18n.placeholder(self.edit_prompt, "Ví dụ: Viết tiêu đề ngắn gọn và mô tả bằng tiếng Việt cho video {title}. Nội dung gốc: {description}.")
         self.edit_prompt.setMaximumHeight(85)
         self.edit_prompt.textChanged.connect(self._on_prompt_changed)
         api_layout.addWidget(self.edit_prompt, 5, 0, 1, 3)
+        prompt_hint = _i18n.ui(QLabel('Để trống để dùng mẫu có sẵn. Dùng {title} và {description} để đưa tiêu đề, mô tả gốc vào hướng dẫn. Đây không phải lệnh tự động tải/đăng video.', api_card))
+        prompt_hint.setWordWrap(True)
+        prompt_hint.setProperty('class', 'hintLabel')
+        api_layout.addWidget(prompt_hint, 6, 0, 1, 3)
 
         api_card.add_layout(api_layout)
         layout.addWidget(api_card)
@@ -221,16 +252,16 @@ class SettingsPage(QWidget):
         yt_layout.addWidget(scope_notice)
 
         # client_secret.json picker
-        lbl_secret = QLabel("Tệp cấu hình YouTube OAuth (client_secret.json):", yt_card)
+        lbl_secret = _i18n.ui(QLabel("Tệp cấu hình YouTube OAuth (client_secret.json):", yt_card))
         lbl_secret.setProperty("class", "fieldLabel")
         yt_layout.addWidget(lbl_secret)
 
         secret_row = QHBoxLayout()
         self.edit_client_secret = QLineEdit(yt_card)
-        self.edit_client_secret.setPlaceholderText("Đường dẫn tệp client_secret.json...")
+        _i18n.placeholder(self.edit_client_secret, "Đường dẫn tệp client_secret.json...")
         secret_row.addWidget(self.edit_client_secret, stretch=1)
 
-        self.btn_browse_secret = AppButton("Chọn file JSON...", variant="secondary", icon_name="folder-open", parent=yt_card)
+        self.btn_browse_secret = _i18n.ui(AppButton("Chọn file JSON...", variant="secondary", icon_name="folder-open", parent=yt_card))
         self.btn_browse_secret.clicked.connect(self._browse_client_secret)
         secret_row.addWidget(self.btn_browse_secret)
         yt_layout.addLayout(secret_row)
@@ -251,11 +282,11 @@ class SettingsPage(QWidget):
         lbl_note_icon.setPixmap(get_icon("info", color=tokens.COLOR_PRIMARY).pixmap(24, 24))
         note_layout.addWidget(lbl_note_icon)
 
-        lbl_note_text = QLabel(
+        lbl_note_text = _i18n.ui(QLabel(
             "Để kết nối, thêm tài khoản mới, đổi kênh mặc định hoặc xem thống kê chi tiết các kênh, "
             "vui lòng sử dụng mục <b>Kênh YouTube</b> trên thanh điều hướng.",
             note_box,
-        )
+        ))
         lbl_note_text.setWordWrap(True)
         lbl_note_text.setStyleSheet(f"color: {tokens.TEXT_SECONDARY}; font-size: 13px;")
         note_layout.addWidget(lbl_note_text, stretch=1)
@@ -269,10 +300,10 @@ class SettingsPage(QWidget):
         self.lbl_yt_channel_name.setVisible(False)
         self.lbl_yt_channel_id = QLabel(self)
         self.lbl_yt_channel_id.setVisible(False)
-        self.btn_connect_yt = AppButton("Kết nối kênh", parent=self)
+        self.btn_connect_yt = _i18n.ui(AppButton("Kết nối kênh", parent=self))
         self.btn_connect_yt.setVisible(False)
         self.btn_connect_yt.clicked.connect(self._connect_youtube)
-        self.btn_disconnect_yt = AppButton("Ngắt kết nối", parent=self)
+        self.btn_disconnect_yt = _i18n.ui(AppButton("Ngắt kết nối", parent=self))
         self.btn_disconnect_yt.setVisible(False)
         self.btn_disconnect_yt.clicked.connect(self._disconnect_youtube)
 
@@ -284,7 +315,7 @@ class SettingsPage(QWidget):
         st_layout.setSpacing(12)
 
         # DB location
-        lbl_db = QLabel("Vị trí cơ sở dữ liệu SQLite:", storage_card)
+        lbl_db = _i18n.ui(QLabel("Vị trí cơ sở dữ liệu SQLite:", storage_card))
         lbl_db.setProperty("class", "fieldLabel")
         st_layout.addWidget(lbl_db, 0, 0)
 
@@ -294,16 +325,16 @@ class SettingsPage(QWidget):
         st_layout.addWidget(self.lbl_db_path, 1, 0)
 
         # Logs location
-        lbl_log = QLabel("Thư mục nhật ký (Logs):", storage_card)
+        lbl_log = _i18n.ui(QLabel("Thư mục nhật ký (Logs):", storage_card))
         lbl_log.setProperty("class", "fieldLabel")
         st_layout.addWidget(lbl_log, 0, 1)
 
-        btn_open_logs = AppButton("Mở thư mục Logs", variant="secondary", icon_name="folder-open", parent=storage_card)
+        btn_open_logs = _i18n.ui(AppButton("Mở thư mục Logs", variant="secondary", icon_name="folder-open", parent=storage_card))
         btn_open_logs.clicked.connect(self._open_logs_dir)
         st_layout.addWidget(btn_open_logs, 1, 1)
 
         # Clear Cache button
-        self.btn_clear_cache = AppButton("Xóa bộ nhớ đệm (Clear Cache)...", variant="danger", icon_name="trash-can", parent=storage_card)
+        self.btn_clear_cache = _i18n.ui(AppButton("Xóa bộ nhớ đệm (Clear Cache)...", variant="danger", icon_name="trash-can", parent=storage_card))
         self.btn_clear_cache.clicked.connect(self._clear_cache_with_confirm)
         st_layout.addWidget(self.btn_clear_cache, 2, 0, 1, 2)
 
@@ -318,11 +349,11 @@ class SettingsPage(QWidget):
         y_layout.setSpacing(10)
 
         y_row = QHBoxLayout()
-        self.lbl_ytdlp_version = QLabel("Phiên bản hiện tại: 2026.10.26", ytdlp_card)
+        self.lbl_ytdlp_version = _i18n.ui(QLabel("Phiên bản hiện tại: 2026.10.26", ytdlp_card))
         self.lbl_ytdlp_version.setStyleSheet("font-weight: 600; color: #f8fafc;")
         y_row.addWidget(self.lbl_ytdlp_version, stretch=1)
 
-        self.btn_update_ytdlp = AppButton("Kiểm tra & Cập nhật yt-dlp", variant="secondary", icon_name="refresh", parent=ytdlp_card)
+        self.btn_update_ytdlp = _i18n.ui(AppButton("Kiểm tra & Cập nhật yt-dlp", variant="secondary", icon_name="refresh", parent=ytdlp_card))
         self.btn_update_ytdlp.clicked.connect(self._update_ytdlp)
         y_row.addWidget(self.btn_update_ytdlp)
         y_layout.addLayout(y_row)
@@ -354,7 +385,7 @@ class SettingsPage(QWidget):
 
         about_text_box = QVBoxLayout()
         about_text_box.setSpacing(4)
-        lbl_about_title = QLabel(f"{branding.APP_NAME} — Phiên bản v{branding.APP_VERSION}", about_card)
+        lbl_about_title = _i18n.formatted(QLabel('', about_card), '{0} — Phiên bản v{1}', f'{branding.APP_NAME}', f'{branding.APP_VERSION}')
         lbl_about_title.setStyleSheet("font-weight: 700; font-size: 14px; color: #ffffff;")
         about_text_box.addWidget(lbl_about_title)
 
@@ -374,14 +405,27 @@ class SettingsPage(QWidget):
     def _populate_gemini_models(self) -> None:
         populate_models(self.combo_gemini_model, self.services)
 
+    def _appearance_changed(self) -> None:
+        self.services.settings.set('ui_language', self.combo_lang.currentData())
+        self.services.settings.set('ui_theme', self.combo_theme.currentData())
+        self.appearance_changed.emit()
+
     def _load_settings(self) -> None:
+        for combo, key, default in (
+            (self.combo_lang, 'ui_language', 'vi'),
+            (self.combo_theme, 'ui_theme', 'dark'),
+        ):
+            previous = combo.blockSignals(True)
+            index = combo.findData(self.services.settings.get(key, default))
+            combo.setCurrentIndex(index if index >= 0 else 0)
+            combo.blockSignals(previous)
         # Load API key
         key = self.services.secrets.get("gemini_api_key")
         if key:
             self.edit_api_key.setText(key)
 
         # Client contents are in SecretStore, not a reusable filesystem path.
-        self.edit_client_secret.setPlaceholderText('Chỉ chọn JSON lần đầu hoặc khi đổi project; client đã lưu sẽ được dùng lại.')
+        _i18n.placeholder(self.edit_client_secret, 'Chỉ chọn JSON lần đầu hoặc khi đổi project; client đã lưu sẽ được dùng lại.')
 
         # Load flags
         analyze_flag = bool(self.services.settings.get("analyze_video_file", False))
@@ -398,6 +442,14 @@ class SettingsPage(QWidget):
         if idx >= 0:
             self.combo_def_privacy.setCurrentIndex(idx)
 
+        # Load default made for kids
+        saved_kids = self.services.settings.get("default_made_for_kids", "") if self.services.settings else ""
+        idx_kids = self.combo_def_made_for_kids.findData(saved_kids)
+        if idx_kids >= 0:
+            self.combo_def_made_for_kids.blockSignals(True)
+            self.combo_def_made_for_kids.setCurrentIndex(idx_kids)
+            self.combo_def_made_for_kids.blockSignals(False)
+
         # Load download directory
         saved_dir = self.services.settings.get("download_dir") if self.services.settings else None
         resolved_dir = resolve_download_directory(saved_dir)
@@ -409,7 +461,7 @@ class SettingsPage(QWidget):
         try:
             import yt_dlp
             ver = getattr(getattr(yt_dlp, "version", None), "__version__", "2026.10.26")
-            self.lbl_ytdlp_version.setText(f"Phiên bản hiện tại: {ver}")
+            _i18n.format_text(self.lbl_ytdlp_version, 'Phiên bản hiện tại: {0}', f'{ver}')
         except Exception:
             pass
 
@@ -466,7 +518,7 @@ class SettingsPage(QWidget):
             else:
                 self.services.youtube.import_client_secret(path)
             self.services.connection.clear()
-            self.edit_client_secret.setText("Đã nhập OAuth Desktop client vào SecretStore")
+            _i18n.set_text(self.edit_client_secret, "Đã nhập OAuth Desktop client vào SecretStore")
         except Exception as error:
             self._connection_error(error.user_message if isinstance(error, AppError) else "Không đọc được OAuth Desktop client. Hãy chọn JSON loại Desktop hợp lệ.")
 
@@ -474,11 +526,11 @@ class SettingsPage(QWidget):
     def _toggle_key_visibility(self) -> None:
         if self.edit_api_key.echoMode() == QLineEdit.EchoMode.Password:
             self.edit_api_key.setEchoMode(QLineEdit.EchoMode.Normal)
-            self.btn_toggle_key.setText("Ẩn")
+            _i18n.set_text(self.btn_toggle_key, "Ẩn")
             self.btn_toggle_key.set_icon_name("eye-off")
         else:
             self.edit_api_key.setEchoMode(QLineEdit.EchoMode.Password)
-            self.btn_toggle_key.setText("Hiện")
+            _i18n.set_text(self.btn_toggle_key, "Hiện")
             self.btn_toggle_key.set_icon_name("eye")
 
     @Slot()
@@ -507,6 +559,22 @@ class SettingsPage(QWidget):
         except Exception as exc:
             QMessageBox.critical(self, "Lỗi kết nối", f"Không thể kết nối: {exc}")
 
+    def _refresh_default_model_hint(self):
+        model = self.services.settings.get('gemini_default_model')
+        _i18n.format_text(self.lbl_default_model,
+            'Mặc định: {0} · Dùng khi mở ứng dụng.' if model else
+            'Chưa đặt mặc định riêng. Chọn mô hình rồi bấm Đặt làm mặc định.', model)
+
+    @Slot()
+    def _set_default_model(self):
+        model = self.combo_gemini_model.currentData()
+        if not self.combo_gemini_model.isEnabled() or not isinstance(model, str) or not model:
+            return
+        self.services.settings.set('gemini_default_model', model)
+        self.services.settings.set('gemini_model', model)
+        self._refresh_default_model_hint()
+        self.services.gemini_selection.changed.emit(model, 'Đã áp dụng mô hình mặc định: ' + model)
+
     @Slot(bool)
     def _on_analyze_video_toggled(self, checked: bool) -> None:
         self.services.settings.set("analyze_video_file", checked)
@@ -522,6 +590,12 @@ class SettingsPage(QWidget):
         if val:
             self.services.settings.set("default_privacy", val)
             self.state.privacy = val
+
+    @Slot(int)
+    def _on_def_kids_changed(self, idx: int) -> None:
+        val = self.combo_def_made_for_kids.itemData(idx)
+        if self.services.settings:
+            self.services.settings.set("default_made_for_kids", val or "")
 
     def _show_channel(self) -> None:
         connection = self.services.connection
@@ -591,7 +665,7 @@ class SettingsPage(QWidget):
         self.btn_update_ytdlp.setEnabled(False)
         self.progress_ytdlp.setVisible(True)
         self.progress_ytdlp.setValue(10)
-        self.lbl_ytdlp_result.setText("Đang kiểm tra phiên bản mới nhất...")
+        _i18n.set_text(self.lbl_ytdlp_result, "Đang kiểm tra phiên bản mới nhất...")
 
         worker = YtDlpUpdateWorker()
         self._active_ytdlp_worker = worker
@@ -612,11 +686,12 @@ class SettingsPage(QWidget):
     def _on_ytdlp_error(self, err: str) -> None:
         self.btn_update_ytdlp.setEnabled(True)
         self.progress_ytdlp.setVisible(False)
-        self.lbl_ytdlp_result.setText(f"Lỗi: {err}")
+        _i18n.format_text(self.lbl_ytdlp_result, 'Lỗi: {0}', f'{err}')
         QMessageBox.critical(self, "Lỗi cập nhật yt-dlp", str(err))
 
     @Slot(str, str)
     def _on_model_selected(self, model, message):
+        self._refresh_default_model_hint()
         self.combo_gemini_model.blockSignals(True)
         index = self.combo_gemini_model.findData(model)
         if index < 0:

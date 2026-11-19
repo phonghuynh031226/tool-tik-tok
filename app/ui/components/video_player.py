@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 
+from app.ui import i18n as _i18n
 class VideoPlayerWidget(QWidget):
     """Integrated video player with play/pause, time slider and status display."""
 
@@ -43,7 +44,7 @@ class VideoPlayerWidget(QWidget):
         self.stack_layout = QStackedLayout(self.screen_container)
 
         # Placeholder when no video
-        self.placeholder = QLabel("Chưa có video được chọn\n(Tải từ TikTok hoặc chọn MP4 từ máy)", self)
+        self.placeholder = _i18n.ui(QLabel("Chưa có video\n(Dán liên kết TikTok và bấm 'Tải video' để xem trước)", self))
         self.placeholder.setObjectName("videoPlaceholder")
         self.placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.stack_layout.addWidget(self.placeholder)
@@ -66,7 +67,7 @@ class VideoPlayerWidget(QWidget):
         controls_layout.setContentsMargins(4, 4, 4, 4)
         controls_layout.setSpacing(10)
 
-        self.btn_play_pause = QPushButton("▶ Phát", self)
+        self.btn_play_pause = _i18n.ui(QPushButton("▶ Phát", self))
         self.btn_play_pause.setFixedWidth(80)
         self.btn_play_pause.setEnabled(False)
         self.btn_play_pause.clicked.connect(self._toggle_playback)
@@ -163,10 +164,10 @@ class VideoPlayerWidget(QWidget):
         self.player.setSource(QUrl())
         self._current_path = None
         self.thumbnail_label.clear()
-        self.placeholder.setText("Chưa có video được chọn\n(Tải từ TikTok hoặc chọn MP4 từ máy)")
+        _i18n.set_text(self.placeholder, "Chưa có video\n(Dán liên kết TikTok và bấm 'Tải video' để xem trước)")
         self.stack_layout.setCurrentWidget(self.placeholder)
         self.btn_play_pause.setEnabled(False)
-        self.btn_play_pause.setText("▶ Phát")
+        _i18n.set_text(self.btn_play_pause, "▶ Phát")
         self.slider.setValue(0)
         self.slider.setEnabled(False)
         self.time_label_current.setText("00:00")
@@ -202,9 +203,9 @@ class VideoPlayerWidget(QWidget):
     @Slot(QMediaPlayer.PlaybackState)
     def _on_state_changed(self, state: QMediaPlayer.PlaybackState) -> None:
         if state == QMediaPlayer.PlaybackState.PlayingState:
-            self.btn_play_pause.setText("⏸ Tạm dừng")
+            _i18n.set_text(self.btn_play_pause, "⏸ Tạm dừng")
         else:
-            self.btn_play_pause.setText("▶ Phát")
+            _i18n.set_text(self.btn_play_pause, "▶ Phát")
 
     @staticmethod
     def _format_time(ms: int) -> str:

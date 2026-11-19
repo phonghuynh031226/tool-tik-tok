@@ -100,8 +100,9 @@ def test_watermark_disclaimer_updated(main_window):
 def test_youtube_channels_redundant_action_bar_hidden(main_window):
     """Verify redundant bottom action bar in YouTubeChannelsPage is not visible."""
     yt_page = main_window.page_youtube
-    assert hasattr(yt_page, "acc_actions_widget")
-    assert not yt_page.acc_actions_widget.isVisible()
+    assert not hasattr(yt_page, "acc_actions_widget")
+    assert not hasattr(yt_page, "btn_refresh_all")
+    assert not hasattr(yt_page, "btn_open_yt")
 
 
 def test_youtube_channels_column_widths_and_empty_state(main_window, qapp):
@@ -128,9 +129,9 @@ def test_history_table_actions_and_empty_state(main_window, qapp):
     hist_page = main_window.page_history
     assert isinstance(hist_page, HistoryPage)
 
-    # Action column (index 4) should be >= 340px
+    # Action column (index 4) should be >= 120px for single YouTube button
     col4_width = hist_page.table.columnWidth(4)
-    assert col4_width >= 340, f"Expected action column width >= 340, got {col4_width}"
+    assert col4_width >= 120, f"Expected action column width >= 120, got {col4_width}"
 
     # Row height should be >= 48px
     row_height = hist_page.table.verticalHeader().defaultSectionSize()

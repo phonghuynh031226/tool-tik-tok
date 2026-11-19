@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
+from app.ui import i18n as _i18n
 from app.ui import tokens
 from app.ui.icons import get_icon
 
@@ -55,12 +56,12 @@ class StepItemWidget(QFrame):
         info_layout.setSpacing(2)
         info_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.lbl_title = QLabel(self.title_text, self)
+        self.lbl_title = _i18n.bind(QLabel(self.title_text, self), self.title_text)
         self.lbl_title.setObjectName("stepTitle")
         self.lbl_title.setStyleSheet("border: none; background: transparent;")
         info_layout.addWidget(self.lbl_title)
 
-        self.lbl_status = QLabel("Chưa làm", self)
+        self.lbl_status = _i18n.ui(QLabel("Chưa làm", self))
         self.lbl_status.setObjectName("stepStatus")
         self.lbl_status.setStyleSheet("border: none; background: transparent;")
         info_layout.addWidget(self.lbl_status)
@@ -168,13 +169,13 @@ class StepItemWidget(QFrame):
         self.setProperty("stepState", state)
         if state == "done":
             self.lbl_circle.setText("✓")
-            self.lbl_status.setText("Hoàn thành")
+            _i18n.set_text(self.lbl_status, "Hoàn thành")
         elif state == "active":
             self.lbl_circle.setText(str(self.step_number))
-            self.lbl_status.setText("Đang làm")
+            _i18n.set_text(self.lbl_status, "Đang làm")
         else:
             self.lbl_circle.setText(str(self.step_number))
-            self.lbl_status.setText("Chưa làm")
+            _i18n.set_text(self.lbl_status, "Chưa làm")
 
         self.style().unpolish(self)
         self.style().polish(self)

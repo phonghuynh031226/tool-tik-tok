@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QWidget
 
 from app.contracts import JobStatus
 from app.ui import icons, tokens
+from app.ui import i18n as _i18n
 
 
 class StatusBadge(QFrame):
@@ -23,19 +24,22 @@ class StatusBadge(QFrame):
         super().__init__(parent)
         self.setObjectName("statusBadge")
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 4, 8, 4)
-        layout.setSpacing(6)
+        layout.setContentsMargins(8, 2, 8, 2)
+        layout.setSpacing(5)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.lbl_icon = QLabel(self)
         self.lbl_icon.setObjectName("statusBadgeIcon")
+        self.lbl_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_icon.setStyleSheet("border: none; background: transparent;")
 
         self.lbl_text = QLabel(self)
         self.lbl_text.setObjectName("statusBadgeText")
+        self.lbl_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_text.setStyleSheet("border: none; background: transparent; font-weight: 600; font-size: 11px;")
 
-        layout.addWidget(self.lbl_icon)
-        layout.addWidget(self.lbl_text)
+        layout.addWidget(self.lbl_icon, alignment=Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(self.lbl_text, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         if status is not None:
             self.set_status(status, badge_type=badge_type)
@@ -117,7 +121,7 @@ class StatusBadge(QFrame):
             }}
         """)
         self.lbl_text.setStyleSheet(f"color: {fg}; font-weight: 600; font-size: 11px; border: none; background: transparent;")
-        self.lbl_text.setText(text)
+        _i18n.set_text(self.lbl_text, text)
         self.lbl_icon.setPixmap(icons.get_colored_icon(icon_name, fg).pixmap(14, 14))
         self.lbl_icon.setStyleSheet("border: none; background: transparent;")
 

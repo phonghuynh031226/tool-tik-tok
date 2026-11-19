@@ -2,6 +2,11 @@
 
 import sys
 
+# Match launcher isolation for direct `python main.py` execution as well.
+# Must run before Qt/FFmpeg and Google SDKs import native dependencies.
+from app.core.runtime_env import configure_native_environment
+configure_native_environment()
+
 # Set Windows AppUserModelID so taskbar groups under Clivo and displays official brand icon
 if sys.platform == "win32":
     try:

@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QStackedWidget, QSystemTrayIcon, QVBoxLayout, QWidget,
 )
 
+from app.ui import i18n as _i18n
 from app.contracts import JobStatus
 from app.ui import branding, icons, tokens
 from app.ui.components import ToastManager
@@ -18,9 +19,13 @@ from app.ui.pages import (
     DashboardPage, HistoryPage, HistorySchedulePage, SettingsPage,
     ToolsPage, YouTubeChannelsPage,
 )
+from app.ui.automation_controller import AutomationController
+from app.ui.pages.automation_page import AutomationPage
+from app.core.automation import AutomationStore
 from app.ui.services import ServiceContainer, get_services
 from app.ui.state import JobState
 from app.ui.styles import apply_app_theme
+from app.ui.appearance import UiPreferences
 
 
 class MainWindow(QMainWindow):
@@ -43,10 +48,14 @@ class MainWindow(QMainWindow):
         self._sidebar_collapsed = False
         self._nav_items: List[Tuple[QPushButton, str, str]] = []
 
+        self._close_when_automation_idle = False
         self._init_ui()
         self._init_system_tray()
         self._connect_signals()
         self._apply_theme()
+        self.ui_preferences = UiPreferences(self, self.services.settings)
+        self.page_settings.appearance_changed.connect(self.ui_preferences.apply)
+        self.ui_preferences.apply()
 
         QTimer.singleShot(0, self._restore_youtube_session)
 
@@ -117,6 +126,7 @@ class MainWindow(QMainWindow):
             ("nav_dashboard", "Tổng quan", 0),
             ("nav_tools", "Công cụ", 1),
             ("nav_youtube", "Kênh YouTube", 2),
+            ("sparkle", "Tự động hóa", 5),
             ("nav_history", "Lịch sử && Lịch đăng", 3),
             ("nav_settings", "Cài đặt", 4),
         ]
@@ -148,7 +158,7 @@ class MainWindow(QMainWindow):
         self.footer_brand_row.addStretch()
         ft_layout.addLayout(self.footer_brand_row)
 
-        self.lbl_footer_version = QLabel(f"Phiên bản v{branding.APP_VERSION}", self.footer_frame)
+        self.lbl_footer_version = _i18n.formatted(QLabel('', self.footer_frame), 'Phiên bản v{0}', f'{branding.APP_VERSION}')
         self.lbl_footer_version.setStyleSheet(f"font-size: {tokens.FONT_SIZE_XS}px; color: {tokens.TEXT_MUTED};")
         ft_layout.addWidget(self.lbl_footer_version)
 
@@ -165,18 +175,38 @@ class MainWindow(QMainWindow):
 
         self.stack = QStackedWidget(content_frame)
 
-        # Instantiate all 5 main pages with SHARED JobState and ServiceContainer
+        # Instantiate main pages with SHARED JobState and ServiceContainer
         self.page_dashboard = DashboardPage(self.job_state, self.services, self.stack)
         self.page_tools = ToolsPage(self.job_state, self.services, self.stack)
         self.page_youtube_channels = YouTubeChannelsPage(self.job_state, self.services, self.stack)
         self.page_history = HistoryPage(self.job_state, self.services, self.stack)
         self.page_settings = SettingsPage(self.job_state, self.services, self.stack)
+        store = getattr(self.services, 'automation_store', None)
+        if store is None:
+            development = type(self.services.settings).__module__ == 'app.services.fakes'
+            store = AutomationStore(':memory:' if development else None)
+        self.automation = AutomationController(self.services, self.page_dashboard, store, self)
+        self.page_automation = AutomationPage(self.services, self.automation, self.stack)
+        self.automation_bar = QWidget(self.page_dashboard)
+        banner = QHBoxLayout(self.automation_bar)
+        banner.setContentsMargins(20, 6, 20, 6)
+        self.automation_status = QLabel(self.automation_bar)
+        self.automation_status.setWordWrap(True)
+        self.automation_status.setTextFormat(Qt.TextFormat.PlainText)
+        banner.addWidget(self.automation_status, 1)
+        self.btn_stop_automation = _i18n.ui(QPushButton('Tắt tự động', self.automation_bar))
+        self.btn_stop_automation.clicked.connect(self.automation.deactivate)
+        banner.addWidget(self.btn_stop_automation)
+        self.page_dashboard.layout().insertWidget(0, self.automation_bar)
+        self.automation.changed.connect(self._automation_changed)
+        self._automation_changed()
 
         self.stack.addWidget(self.page_dashboard)         # Index 0
         self.stack.addWidget(self.page_tools)             # Index 1
         self.stack.addWidget(self.page_youtube_channels)  # Index 2
         self.stack.addWidget(self.page_history)           # Index 3
         self.stack.addWidget(self.page_settings)          # Index 4
+        self.stack.addWidget(self.page_automation)        # Index 5
 
         # Backward compatibility aliases
         self.page_tiktok = self.page_tools
@@ -194,19 +224,37 @@ class MainWindow(QMainWindow):
         self.btn_nav_youtube = self.nav_group.button(2)
         self.btn_nav_history = self.nav_group.button(3)
         self.btn_nav_settings = self.nav_group.button(4)
+        self.btn_nav_automation = self.nav_group.button(5)
         if self.btn_nav_dashboard:
             self.btn_nav_dashboard.setChecked(True)
         self.stack.setCurrentIndex(0)
 
         # Status label kept for programmatic state tracking & test compatibility
-        self.lbl_active_job_status = QLabel("Chưa có tác vụ nào", self)
+        self.lbl_active_job_status = _i18n.ui(QLabel("Chưa có tác vụ nào", self))
         self.lbl_active_job_status.setVisible(False)
 
         # Initialize Toast Manager (floating bottom-right non-blocking alerts)
         self.toast_manager = ToastManager(self)
 
+    def _automation_changed(self):
+        active = self.automation.armed_prompt_id is not None or self.automation.busy
+        self.automation_bar.setVisible(active)
+        self.automation_status.setText(self.automation.message)
+        if self._close_when_automation_idle and not self.automation.busy:
+            QTimer.singleShot(0, self.close)
+
+    def closeEvent(self, event):
+        if hasattr(self, 'automation') and self.automation.busy:
+            self._close_when_automation_idle = True
+            self.automation.deactivate()
+            event.ignore()
+            return
+        if hasattr(self, "automation"):
+            self.automation.deactivate()
+        super().closeEvent(event)
+
     def _create_nav_button(self, icon_name: str, label_text: str, page_index: int) -> QPushButton:
-        btn = QPushButton(f"  {label_text}", self.sidebar)
+        btn = _i18n.bind(QPushButton(f"  {label_text}", self.sidebar), f"  {label_text}")
         btn.setProperty("class", "navBtn")
         btn.setCheckable(True)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -237,6 +285,8 @@ class MainWindow(QMainWindow):
         if index == 3:
             self.page_history.refresh_history()
             self.page_history.refresh_scheduled()
+        elif index == 5:
+            self.page_automation.refresh()
         elif index == 2:
             self.page_youtube_channels._load_accounts()
 
@@ -271,8 +321,8 @@ class MainWindow(QMainWindow):
             self.header_frame.setContentsMargins(0, 0, 0, tokens.SPACE_MD)
 
             for btn, icon_name, label_text in self._nav_items:
-                btn.setText("")
-                btn.setToolTip(label_text.replace("&&", "&"))
+                _i18n.set_text(btn, "")
+                _i18n.tooltip(btn, _i18n.translate(label_text, _i18n.language_for(self)).replace("&&", "&"))
                 btn.setProperty("class", "navBtnCollapsed")
                 btn.style().unpolish(btn)
                 btn.style().polish(btn)
@@ -284,7 +334,7 @@ class MainWindow(QMainWindow):
             self.header_frame.setContentsMargins(tokens.SPACE_SM, 0, tokens.SPACE_SM, tokens.SPACE_MD)
 
             for btn, icon_name, label_text in self._nav_items:
-                btn.setText(f"  {label_text}")
+                _i18n.set_text(btn, f"  {label_text}")
                 btn.setToolTip("")
                 btn.setProperty("class", "navBtn")
                 btn.style().unpolish(btn)
@@ -329,11 +379,11 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def _on_status_changed(self, status: str) -> None:
         if status == "DRY_RUN":
-            self.lbl_active_job_status.setText("Đã chạy thử (chưa đăng YouTube)")
+            _i18n.set_text(self.lbl_active_job_status, "Đã chạy thử (chưa đăng YouTube)")
             self.notify("info", "Chạy thử hoàn tất", "Đã xác thực và mô phỏng luồng đăng YouTube an toàn (không upload thật).")
             return
         elif status == JobStatus.UPLOADED.value:
-            self.lbl_active_job_status.setText("Đã tải lên YouTube")
+            _i18n.set_text(self.lbl_active_job_status, "Đã tải lên YouTube")
             url = self.job_state.upload_result.url if self.job_state.upload_result else ""
             def open_url():
                 if url:
@@ -349,7 +399,7 @@ class MainWindow(QMainWindow):
             )
             return
         elif status == JobStatus.SCHEDULED.value:
-            self.lbl_active_job_status.setText('Đã hẹn giờ (chưa xác nhận công khai)')
+            _i18n.set_text(self.lbl_active_job_status, 'Đã hẹn giờ (chưa xác nhận công khai)')
             return
         elif status:
             self.lbl_active_job_status.setText(status)

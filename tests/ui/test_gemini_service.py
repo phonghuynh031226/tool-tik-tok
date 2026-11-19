@@ -491,3 +491,20 @@ def test_select_preferred_model():
     assert switched is True
 
 
+
+
+def test_generate_timeout_returns_before_blocked_sdk_finishes(sample_meta):
+    import threading
+    import time
+    release=threading.Event()
+    client=MagicMock()
+    client.models.generate_content.side_effect=lambda **kwargs: release.wait(5)
+    generator=GeminiContentGenerator(api_key='test-only',client_factory=lambda _:client)
+    started=time.monotonic()
+    try:
+        with pytest.raises(NetworkError):
+            generator.generate(sample_meta,settings={'timeout':0.1})
+        assert time.monotonic()-started < 1.0
+        assert not release.is_set()
+    finally:
+        release.set()

@@ -150,26 +150,49 @@ class GenerateContentWorker(QRunnable):
 
     @Slot()
     def run(self) -> None:
+        import threading
+        import time
         if self.cancel_token.is_cancelled:
             self.signals.cancelled.emit()
             return
-        try:
-            self.signals.progress.emit(0.2)
-            content = self.generator.generate(self.meta, self.settings)
-            notice = getattr(self.generator, 'last_model_notice', '')
-            model = getattr(self.generator, 'last_successful_model', '')
-            if notice and model:
-                self.signals.model_selected.emit(model, notice)
-            self.signals.progress.emit(1.0)
+        # The network operation must never own Qt signals or wait for UI teardown.
+        # Abandoned results remain local and cannot advance an upload or a later job.
+        completed = threading.Event()
+        outcome = {}
+        generator, meta, settings = self.generator, self.meta, dict(self.settings)
+        def generate():
+            try:
+                outcome['content'] = generator.generate(meta, settings)
+                outcome['notice'] = getattr(generator, 'last_model_notice', '')
+                outcome['model'] = getattr(generator, 'last_successful_model', '')
+            except Exception as error:
+                outcome['error'] = error
+            finally:
+                completed.set()
+        self.signals.progress.emit(0.2)
+        deadline = time.monotonic() + max(0.001, float(settings.get('timeout', self.timeout)))
+        threading.Thread(target=generate, name='studio-ai-request', daemon=True).start()
+        while not completed.wait(0.05):
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
-            else:
-                self.signals.finished.emit(content)
-        except Exception as exc:
-            if self.cancel_token.is_cancelled:
-                self.signals.cancelled.emit()
-            else:
-                self.signals.error.emit(_safe_error(exc, "Lỗi khi sinh nội dung AI", event="generate_content_failed"))
+                return
+            if time.monotonic() >= deadline:
+                self.signals.error.emit('Quá thời gian tạo nội dung AI. Tác vụ đã dừng; vui lòng thử lại.')
+                return
+        if self.cancel_token.is_cancelled:
+            self.signals.cancelled.emit()
+            return
+        if time.monotonic() >= deadline:
+            self.signals.error.emit('Quá thời gian tạo nội dung AI. Tác vụ đã dừng; vui lòng thử lại.')
+            return
+        if 'error' in outcome:
+            self.signals.error.emit(_safe_error(outcome['error'], 'Lỗi khi sinh nội dung AI', event='generate_content_failed'))
+            return
+        notice, model = outcome['notice'], outcome['model']
+        if isinstance(notice, str) and isinstance(model, str) and notice and model:
+            self.signals.model_selected.emit(model, notice)
+        self.signals.progress.emit(1.0)
+        self.signals.finished.emit(outcome['content'])
 
 
 class UploadYouTubeWorker(QRunnable):

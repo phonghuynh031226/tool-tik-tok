@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QToolButton, QVBoxLayout, QWidget,
 )
 
+from app.ui import i18n as _i18n
 from app.ui import icons, tokens
 from app.ui.components.buttons import AppButton
 
@@ -135,7 +136,7 @@ class CustomCalendarPopup(QFrame):
         layout.addWidget(self.grid_widget)
 
     def _render_calendar(self) -> None:
-        self.lbl_month_year.setText(f"Tháng {self._view_month:02d} / {self._view_year}")
+        _i18n.format_text(self.lbl_month_year, 'Tháng {0} / {1}', f'{self._view_month:02d}', f'{self._view_year}')
 
         # Clear existing grid buttons
         while self.grid_layout.count():
@@ -308,7 +309,7 @@ class SchedulePickerWidget(QWidget):
 
         self.btn_date = QPushButton(self)
         self.btn_date.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_date.setMinimumHeight(tokens.HEIGHT_INPUT_MD)
+        self.btn_date.setFixedHeight(tokens.HEIGHT_INPUT_MD)
         self.btn_date.setStyleSheet(f"""
             QPushButton {{
                 background-color: {tokens.BG_INPUT};
@@ -331,6 +332,7 @@ class SchedulePickerWidget(QWidget):
         # Time container (Hour : Minute)
         time_box = QHBoxLayout()
         time_box.setSpacing(4)
+        time_box.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         combo_ss = f"""
             QComboBox {{
@@ -338,11 +340,9 @@ class SchedulePickerWidget(QWidget):
                 color: {tokens.TEXT_PRIMARY};
                 border: 1px solid {tokens.BORDER_DEFAULT};
                 border-radius: {tokens.RADIUS_MD}px;
-                padding-left: 8px;
-                padding-right: 22px;
+                padding: 2px 20px 2px 8px;
                 font-size: 13px;
                 font-weight: 600;
-                min-height: {tokens.HEIGHT_INPUT_MD - 2}px;
             }}
             QComboBox:hover {{
                 border-color: {tokens.BORDER_HOVER};
@@ -355,6 +355,7 @@ class SchedulePickerWidget(QWidget):
         """
 
         self.combo_hour = QComboBox(self)
+        self.combo_hour.setFixedHeight(tokens.HEIGHT_INPUT_MD)
         for h in range(24):
             self.combo_hour.addItem(f"{h:02d}", h)
         self.combo_hour.setStyleSheet(combo_ss)
@@ -362,10 +363,12 @@ class SchedulePickerWidget(QWidget):
         time_box.addWidget(self.combo_hour)
 
         lbl_colon = QLabel(":", self)
+        lbl_colon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lbl_colon.setStyleSheet("font-weight: bold; font-size: 14px; color: #94a3b8;")
         time_box.addWidget(lbl_colon)
 
         self.combo_minute = QComboBox(self)
+        self.combo_minute.setFixedHeight(tokens.HEIGHT_INPUT_MD)
         for m in range(0, 60, 5):
             self.combo_minute.addItem(f"{m:02d}", m)
         self.combo_minute.setStyleSheet(combo_ss)
@@ -378,24 +381,28 @@ class SchedulePickerWidget(QWidget):
         # Dynamic size adjustment for time combos based on actual font metrics + padding
         self._update_time_combo_widths()
 
-        # Row 2: Sub-info row (Timezone)
-        sub_info_row = QHBoxLayout()
+        # Row 2: Sub-info row (Timezone) - Hidden per user preference
+        self.sub_info_container = QWidget(self)
+        sub_info_row = QHBoxLayout(self.sub_info_container)
+        sub_info_row.setContentsMargins(0, 0, 0, 0)
         sub_info_row.setSpacing(8)
 
         tz_str = datetime.now().astimezone().strftime("%z")
         tz_formatted = f"GMT{tz_str[:3]}:{tz_str[3:]}" if len(tz_str) == 5 else "GMT+7"
-        self.lbl_timezone = QLabel(f"Múi giờ máy: {tz_formatted}", self)
+        self.lbl_timezone = _i18n.formatted(QLabel('', self.sub_info_container), 'Múi giờ máy: {0}', f'{tz_formatted}')
         self.lbl_timezone.setStyleSheet("color: #38bdf8; font-weight: 600; font-size: 12px;")
         sub_info_row.addWidget(self.lbl_timezone)
         sub_info_row.addStretch()
-        layout.addLayout(sub_info_row)
+        layout.addWidget(self.sub_info_container)
+        self.sub_info_container.setVisible(False)
 
-        # Row 3: Quick suggestion chips in 2x2 wrapping grid without indentation
-        chips_box = QVBoxLayout()
+        # Row 3: Quick suggestion chips in 2x2 wrapping grid - Hidden per user preference
+        self.chips_container = QWidget(self)
+        chips_box = QVBoxLayout(self.chips_container)
         chips_box.setSpacing(4)
         chips_box.setContentsMargins(0, 0, 0, 0)
 
-        lbl_quick = QLabel("Gợi ý nhanh:", self)
+        lbl_quick = _i18n.ui(QLabel("Gợi ý nhanh:", self.chips_container))
         lbl_quick.setStyleSheet(f"color: {tokens.TEXT_SECONDARY}; font-size: 11px; font-weight: 500;")
         chips_box.addWidget(lbl_quick)
 
@@ -418,7 +425,8 @@ class SchedulePickerWidget(QWidget):
         chips_grid.setColumnStretch(0, 1)
         chips_grid.setColumnStretch(1, 1)
         chips_box.addLayout(chips_grid)
-        layout.addLayout(chips_box)
+        layout.addWidget(self.chips_container)
+        self.chips_container.setVisible(False)
 
         # Row 4: Live Summary & Validation Notice
         self.lbl_summary = QLabel(self)
@@ -427,10 +435,10 @@ class SchedulePickerWidget(QWidget):
         layout.addWidget(self.lbl_summary)
 
         # Row 5: YouTube Notice
-        lbl_notice = QLabel(
+        lbl_notice = _i18n.ui(QLabel(
             "YouTube sẽ tự động công khai video đúng thời điểm hẹn, bạn không cần giữ ứng dụng chạy.",
             self,
-        )
+        ))
         lbl_notice.setWordWrap(True)
         lbl_notice.setStyleSheet(f"color: {tokens.TEXT_MUTED}; font-size: 11px;")
         layout.addWidget(lbl_notice)
@@ -449,8 +457,8 @@ class SchedulePickerWidget(QWidget):
         w_hour = self._calculate_combo_width(self.combo_hour)
         w_min = self._calculate_combo_width(self.combo_minute)
         final_w = max(w_hour, w_min, 72)
-        self.combo_hour.setFixedWidth(final_w)
-        self.combo_minute.setFixedWidth(final_w)
+        self.combo_hour.setFixedSize(final_w, tokens.HEIGHT_INPUT_MD)
+        self.combo_minute.setFixedSize(final_w, tokens.HEIGHT_INPUT_MD)
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -541,9 +549,8 @@ class SchedulePickerWidget(QWidget):
     def _update_display(self) -> None:
         self._update_chips_visibility()
 
-        # Update Date button text
-        weekday_name = VIETNAMESE_WEEKDAYS[self._target_dt.weekday()]
-        date_str = f"📅 {weekday_name}, {self._target_dt.strftime('%d/%m/%Y')}"
+        # Update Date button text (Bỏ thứ theo yêu cầu)
+        date_str = f"📅 {self._target_dt.strftime('%d/%m/%Y')}"
         self.btn_date.setText(date_str)
 
         # Update Hour/Minute combo boxes without triggering redundant signals
@@ -574,14 +581,14 @@ class SchedulePickerWidget(QWidget):
             self.lbl_summary.setStyleSheet("color: #ef4444; font-size: 12px; font-weight: 600;")
             rem_min = int(total_seconds // 60)
             if rem_min <= 0:
-                self.lbl_summary.setText("⚠️ Thời điểm hẹn phải nằm trong tương lai (ít nhất cách 10 phút).")
+                _i18n.set_text(self.lbl_summary, "⚠️ Thời điểm hẹn phải nằm trong tương lai (ít nhất cách 10 phút).")
             else:
-                self.lbl_summary.setText(f"⚠️ Lịch hẹn phải cách hiện tại ít nhất 10 phút (hiện chỉ còn {rem_min} phút).")
+                _i18n.format_text(self.lbl_summary, '⚠️ Lịch hẹn phải cách hiện tại ít nhất 10 phút (hiện chỉ còn {0} phút).', f'{rem_min}')
             self.datetime_changed.emit(None)
         elif total_seconds > 365 * 86400:  # > 365 days
             self._is_valid = False
             self.lbl_summary.setStyleSheet("color: #ef4444; font-size: 12px; font-weight: 600;")
-            self.lbl_summary.setText("⚠️ Lịch hẹn không được vượt quá 365 ngày kể từ hôm nay.")
+            _i18n.set_text(self.lbl_summary, "⚠️ Lịch hẹn không được vượt quá 365 ngày kể từ hôm nay.")
             self.datetime_changed.emit(None)
         else:
             self._is_valid = True
@@ -601,9 +608,7 @@ class SchedulePickerWidget(QWidget):
             remaining_str = " ".join(time_parts)
 
             dt_fmt = self._target_dt.strftime("%H:%M")
-            self.lbl_summary.setText(
-                f"Sẽ công khai lúc {dt_fmt} {weekday_name} {self._target_dt.strftime('%d/%m/%Y')} ({tz_fmt}), còn {remaining_str}."
-            )
+            _i18n.format_text(self.lbl_summary, 'Sẽ công khai lúc {0} ngày {1}, còn {2}.', f'{dt_fmt}', f"{self._target_dt.strftime('%d/%m/%Y')}", f'{remaining_str}')
             # Emit UTC datetime
             utc_dt = self._target_dt.astimezone(timezone.utc)
             self.datetime_changed.emit(utc_dt)

@@ -11,10 +11,11 @@ from PySide6.QtCore import QThreadPool, QTimer, QUrl, Qt, Signal, Slot
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QMessageBox, QProgressBar, QScrollArea, QTabWidget, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QMessageBox, QProgressBar, QScrollArea, QSizePolicy, QTabWidget, QTableWidget,
+    QTableWidgetItem, QVBoxLayout, QWidget, QDialog, QAbstractItemView,
 )
 
+from app.ui import i18n as _i18n
 from app.contracts import HistoryRecord, JobStatus, UploadResult
 from app.core.paths import resolve_download_directory
 from app.ui import tokens
@@ -25,8 +26,37 @@ from app.ui.state import JobState
 from app.workers import SyncScheduledWorker
 
 
+class VideoDetailsDialog(QDialog):
+    def __init__(self, record, parent=None):
+        super().__init__(parent)
+        _i18n.title(self, 'Chi tiết video')
+        self.resize(620, 360)
+        layout = QVBoxLayout(self)
+        title = QLabel(str(record.get('youtube_title') or record.get('title') or 'Không tiêu đề'), self)
+        title.setWordWrap(True)
+        title.setTextFormat(Qt.TextFormat.PlainText)
+        title.setStyleSheet('font-size: 17px; font-weight: 600;')
+        layout.addWidget(title)
+        fields = [
+            ('ID YouTube', record.get('youtube_video_id')),
+            ('ID TikTok', record.get('tiktok_video_id') or record.get('video_id')),
+            ('Đường dẫn file', record.get('local_mp4_path') or record.get('path') or record.get('local_video_path')),
+            ('Chế độ hiển thị', record.get('privacy_status') or record.get('privacy')),
+            ('Thông tin lỗi', record.get('error_message')),
+        ]
+        for name, value in fields:
+            label = QLabel(f"{name}: {value or '—'}", self)
+            label.setTextFormat(Qt.TextFormat.PlainText)
+            label.setWordWrap(True)
+            label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            layout.addWidget(label)
+        close = _i18n.ui(AppButton('Đóng', variant='secondary', parent=self))
+        close.clicked.connect(self.accept)
+        layout.addWidget(close, alignment=Qt.AlignmentFlag.AlignRight)
+
+
 class HistoryPage(QWidget):
-    """History and Scheduling view with 2 tabs: History records and Scheduled uploads."""
+    """One video table with schedule countdowns and confirmed publication status."""
 
     navigate_requested = Signal(int)  # Emit target page index to MainWindow
 
@@ -40,18 +70,41 @@ class HistoryPage(QWidget):
         self.state = job_state
         self.services = services
         self.thread_pool = QThreadPool.globalInstance()
+        self._all_records: list[dict] = []
         self._current_records: list[dict] = []
         self._scheduled_records: list[dict] = []
         self._sync_worker: Optional[SyncScheduledWorker] = None
+        self._sync_silent = False
 
         self._init_ui()
         self.refresh_history()
-        self.refresh_scheduled()
 
         # Timer to update countdown every 5 seconds
         self._countdown_timer = QTimer(self)
         self._countdown_timer.timeout.connect(self._update_countdowns)
         self._countdown_timer.start(5000)
+        self._schedule_poll_timer = QTimer(self)
+        self._schedule_poll_timer.setInterval(60000)
+        self._schedule_poll_timer.timeout.connect(self._maybe_sync_scheduled)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.refresh_history()
+        self._schedule_poll_timer.start()
+        QTimer.singleShot(0, self._maybe_sync_scheduled)
+
+    def hideEvent(self, event):
+        self._schedule_poll_timer.stop()
+        super().hideEvent(event)
+
+    @Slot()
+    def _maybe_sync_scheduled(self):
+        if (not self.isVisible() or self._sync_worker is not None
+                or self.services.is_fake or self.services.connection.busy):
+            return
+        if not self.services.history.list_scheduled():
+            return
+        self._on_sync_scheduled_clicked(silent=True)
 
     def _notify(self, ntype: str, title: str, message: str) -> None:
         toast = ToastManager.instance()
@@ -59,299 +112,196 @@ class HistoryPage(QWidget):
             getattr(toast, ntype, toast.info)(title, message)
 
     def _init_ui(self) -> None:
-        outer_layout = QVBoxLayout(self)
-        outer_layout.setContentsMargins(16, 16, 16, 16)
-        outer_layout.setSpacing(12)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(16)
+        header = QHBoxLayout()
+        info = QVBoxLayout()
+        title = _i18n.ui(QLabel('Lịch sử & Lịch đăng', self))
+        title.setStyleSheet('font-size: 22px; font-weight: 700;')
+        info.addWidget(title)
+        subtitle = _i18n.ui(QLabel('Theo dõi lịch sử video và thời gian phát hành.', self))
+        subtitle.setProperty('class', 'hintLabel')
+        info.addWidget(subtitle)
+        header.addLayout(info, 1)
 
-        self.tab_widget = QTabWidget(self)
-        self.tab_widget.setStyleSheet(
-            f"QTabWidget::pane {{ border: 1px solid {tokens.BORDER_SUBTLE}; "
-            f"border-radius: {tokens.RADIUS_MD}px; background-color: {tokens.BG_APP}; }}"
-            f"QTabBar::tab {{ background-color: {tokens.BG_CARD}; color: {tokens.TEXT_SECONDARY}; "
-            f"padding: 10px 20px; font-weight: 600; font-size: 13px; "
-            f"border-top-left-radius: 6px; border-top-right-radius: 6px; margin-right: 4px; }}"
-            f"QTabBar::tab:selected {{ background-color: {tokens.BG_CARD_HOVER}; "
-            f"color: {tokens.COLOR_PRIMARY}; border-bottom: 2px solid {tokens.COLOR_PRIMARY}; }}"
-            f"QTabBar::tab:hover {{ background-color: {tokens.BG_CARD_HOVER}; color: {tokens.TEXT_PRIMARY}; }}"
-        )
+        self.count_label = QLabel(self)
+        self.count_label.setStyleSheet(f"color: {tokens.TEXT_SECONDARY}; font-size: 13px; font-weight: 500; margin-right: 8px;")
+        header.addWidget(self.count_label)
 
-        # Tab 1: History
-        self.tab_history = self._create_history_tab()
-        self.tab_widget.addTab(self.tab_history, get_icon("nav_history"), "Lịch sử tác vụ")
-
-        # Tab 2: Scheduled Uploads
-        self.tab_scheduled = self._create_scheduled_tab()
-        self.tab_widget.addTab(self.tab_scheduled, get_icon("clock"), "Lịch đăng video")
-
-        outer_layout.addWidget(self.tab_widget)
-
-    # =========================================================================
-    # TAB 1: HISTORY RECORDS
-    # =========================================================================
-    def _create_history_tab(self) -> QWidget:
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(14)
-
-        # Header
-        header_row = QHBoxLayout()
-        head_info = QVBoxLayout()
-        header = QLabel("Lịch Sử Tải & Xuất Bản Video", container)
-        header.setStyleSheet("font-size: 18px; font-weight: 700; color: #ffffff;")
-        head_info.addWidget(header)
-
-        sub = QLabel(
-            "Tra cứu các video đã được xử lý, mở thư mục MP4, xem liên kết YouTube hoặc tiếp tục tác vụ dở dang.",
-            container,
-        )
-        sub.setProperty("class", "hintLabel")
-        sub.setWordWrap(True)
-        head_info.addWidget(sub)
-        header_row.addLayout(head_info, stretch=1)
-
-        self.btn_export_csv = AppButton("Xuất CSV", variant="secondary", icon_name="export", parent=container)
+        self.btn_export_csv = _i18n.ui(AppButton('Xuất CSV', variant='secondary', icon_name='export', parent=self))
         self.btn_export_csv.clicked.connect(self._export_csv)
-        header_row.addWidget(self.btn_export_csv)
-        layout.addLayout(header_row)
+        header.addWidget(self.btn_export_csv)
+        layout.addLayout(header)
 
-        # Filter Card
-        filter_card = Card(parent=container)
-        filter_card.main_layout.setContentsMargins(12, 10, 12, 10)
-        f_layout = QHBoxLayout()
-        f_layout.setSpacing(10)
-
-        self.input_search = QLineEdit(filter_card)
-        self.input_search.setPlaceholderText("Tìm kiếm theo ID video, tiêu đề, URL...")
+        # Retain search & filter objects hidden for backward compatibility & programmatic access
+        self.input_search = QLineEdit(self)
+        self.input_search.hide()
         self.input_search.textChanged.connect(self._on_search_changed)
-        f_layout.addWidget(self.input_search, stretch=1)
 
-        self.combo_status = QComboBox(filter_card)
-        self.combo_status.addItem("Tất cả trạng thái", None)
-        for s in JobStatus:
-            self.combo_status.addItem(s.value, s)
+        self.combo_status = QComboBox(self)
+        for text, key in [('Tất cả', 'all'), ('Chờ công khai', 'waiting'),
+                          ('Đã công khai', 'public'), ('Lỗi', 'failed')]:
+            self.combo_status.addItem(text, key)
         self.combo_status.currentIndexChanged.connect(self.refresh_history)
-        f_layout.addWidget(self.combo_status)
+        self.combo_status.hide()
 
-        self.btn_refresh = AppButton("Làm mới", variant="ghost", icon_name="refresh", parent=filter_card)
-        self.btn_refresh.clicked.connect(self.refresh_history)
-        f_layout.addWidget(self.btn_refresh)
-
-        filter_card.add_layout(f_layout)
-        layout.addWidget(filter_card)
-
-        # History Table
-        self.table = QTableWidget(container)
-        self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels([
-            "Mã ID", "Tiêu đề video", "Trạng thái", "Chế độ", "Hành động"
-        ])
-        header_view = self.table.horizontalHeader()
-        header_view.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header_view.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header_view.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header_view.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        header_view.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        self.table.setColumnWidth(4, 340)
-        self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setDefaultSectionSize(48)
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setAlternatingRowColors(True)
-        layout.addWidget(self.table)
-
-        self.empty_history = EmptyState(
-            icon_name="history",
-            title="Chưa có bản ghi lịch sử",
-            description="Các video bạn đã tải, xử lý và tải lên YouTube sẽ hiển thị tại đây.",
-            parent=container,
-        )
-        self.empty_history.setVisible(False)
-        layout.addWidget(self.empty_history)
-
-        return container
-
-    # =========================================================================
-    # TAB 2: SCHEDULED UPLOADS
-    # =========================================================================
-    def _create_scheduled_tab(self) -> QWidget:
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(14)
-
-        # Header
-        h_row = QHBoxLayout()
-        h_info = QVBoxLayout()
-        h_title = QLabel("Lịch Đăng Video Hẹn Giờ (YouTube Scheduled)", container)
-        h_title.setStyleSheet("font-size: 18px; font-weight: 700; color: #ffffff;")
-        h_info.addWidget(h_title)
-
-        h_sub = QLabel(
-            "Theo dõi thời gian công khai video theo múi giờ máy tính. Bấm 'Đồng bộ trạng thái' để kiểm tra xem video đã được phát hành chưa.",
-            container,
-        )
-        h_sub.setProperty("class", "hintLabel")
-        h_sub.setWordWrap(True)
-        h_info.addWidget(h_sub)
-        h_row.addLayout(h_info, stretch=1)
-
-        self.btn_sync_scheduled = AppButton("Đồng bộ trạng thái", variant="primary", icon_name="refresh", parent=container)
-        self.btn_sync_scheduled.clicked.connect(self._on_sync_scheduled_clicked)
-        h_row.addWidget(self.btn_sync_scheduled)
-
-        self.btn_refresh_scheduled = AppButton("Làm mới", variant="ghost", icon_name="refresh", parent=container)
-        self.btn_refresh_scheduled.clicked.connect(self._on_sync_scheduled_clicked)
-        h_row.addWidget(self.btn_refresh_scheduled)
-        layout.addLayout(h_row)
-
-        self.prog_sync = QProgressBar(container)
+        self.prog_sync = QProgressBar(self)
         self.prog_sync.setRange(0, 0)
         self.prog_sync.setFixedHeight(3)
         self.prog_sync.setTextVisible(False)
-        self.prog_sync.setVisible(False)
+        self.prog_sync.hide()
         layout.addWidget(self.prog_sync)
 
-        # Scheduled Table
-        self.tbl_scheduled = QTableWidget(container)
-        self.tbl_scheduled.setColumnCount(6)
-        self.tbl_scheduled.setHorizontalHeaderLabels([
-            "Mã Video", "Tiêu đề video", "Kênh YouTube", "Giờ công khai (máy tính)", "Thời gian còn lại", "Trạng thái"
-        ])
-        s_head = self.tbl_scheduled.horizontalHeader()
-        s_head.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        s_head.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        s_head.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        s_head.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        s_head.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        s_head.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
-        self.tbl_scheduled.verticalHeader().setVisible(False)
-        self.tbl_scheduled.verticalHeader().setDefaultSectionSize(48)
-        self.tbl_scheduled.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.tbl_scheduled.setAlternatingRowColors(True)
-        layout.addWidget(self.tbl_scheduled)
+        # Programmatic manual-sync hooks share the existing worker, no duplicate UI.
+        self.btn_sync_scheduled = _i18n.ui(AppButton('Đồng bộ', parent=self))
+        self.btn_refresh_scheduled = self.btn_sync_scheduled
+        self.btn_sync_scheduled.clicked.connect(self._on_sync_scheduled_clicked)
+        self.btn_sync_scheduled.hide()
 
-        self.empty_scheduled = EmptyState(
-            icon_name="clock",
-            title="Không có video hẹn giờ",
-            description="Chưa có video nào được lên lịch phát hành tự động trên YouTube.",
-            parent=container,
+        self.table = QTableWidget(self)
+        self.table.setColumnCount(5)
+        _i18n.headers(self.table, ['Tiêu đề video', 'Kênh YouTube', 'Giờ công khai', 'Trạng thái', 'YouTube'])
+        head = self.table.horizontalHeader()
+        head.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        head.setMinimumSectionSize(120)
+        for column, width in [(1, 150), (2, 185), (3, 145), (4, 140)]:
+            head.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
+            self.table.setColumnWidth(column, width)
+        self.table.verticalHeader().hide()
+        self.table.verticalHeader().setDefaultSectionSize(62)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setAlternatingRowColors(True)
+        self.table.setStyleSheet(f'''
+            QTableWidget {{
+                background-color: {tokens.BG_CARD};
+                alternate-background-color: {tokens.BG_CARD_HOVER};
+                border: 1px solid {tokens.BORDER_DEFAULT};
+                border-radius: 12px;
+                outline: none;
+            }}
+        ''')
+        self.table.setWordWrap(False)
+        self.table.setShowGrid(False)
+        layout.addWidget(self.table, 1)
+
+        self.empty_history = EmptyState(
+            icon_name='history',
+            title='Không có video',
+            description='Chưa có video nào trong lịch sử xuất bản.',
+            parent=self
         )
-        self.empty_scheduled.setVisible(False)
-        layout.addWidget(self.empty_scheduled)
+        layout.addWidget(self.empty_history)
 
-        return container
+    @staticmethod
+    def _status(record):
+        status = record.get('processing_status') or record.get('status') or 'NEW'
+        return status.value if hasattr(status, 'value') else str(status)
 
-    # =========================================================================
-    # HISTORY LOGIC
-    # =========================================================================
+    @staticmethod
+    def _publish_time(record):
+        value = record.get('scheduled_at') or record.get('publish_at')
+        try:
+            value = datetime.fromisoformat(value) if isinstance(value, str) else value
+            return value if isinstance(value, datetime) and value.utcoffset() is not None else None
+        except ValueError:
+            return None
+
+    def _presentation(self, record):
+        status = self._status(record)
+        privacy = record.get('privacy_status') or record.get('privacy')
+        due = self._publish_time(record)
+        if status == 'DRY_RUN':
+            return 'Chạy thử', 'info', 'all'
+        if status == 'UPLOADED' and privacy == 'public' and (
+                not due or record.get('schedule_public_confirmed') is True):
+            return 'Đã công khai', 'success', 'public'
+        if record.get('schedule_needs_review') or (due and (
+                status == 'UPLOADED' or due <= datetime.now(timezone.utc))):
+            return 'Cần kiểm tra', 'warning', 'failed'
+        if status == 'SCHEDULED':
+            return 'Chờ công khai', 'warning', 'waiting'
+        if status in {'FAILED', 'CANCELLED'}:
+            return ('Thất bại' if status == 'FAILED' else 'Đã hủy'), 'danger', 'failed'
+        labels = {'NEW': 'Mới tạo', 'METADATA_OK': 'Đã lấy thông tin',
+                  'DOWNLOADED': 'Đã tải về', 'CONTENT_READY': 'Nội dung sẵn sàng',
+                  'UPLOADING': 'Đang tải lên', 'UPLOADED': 'Đã tải lên'}
+        return labels.get(status, status), 'info', 'all'
+
     @Slot()
     def refresh_history(self) -> None:
         query = self.input_search.text().strip()
-        status_filter = self.combo_status.currentData()
-
         try:
-            if query:
-                records = self.services.history.search(query)
-            else:
-                records = self.services.history.list(status=status_filter)
+            records = self.services.history.search(query) if query else self.services.history.list()
         except Exception:
             records = []
-
         records = [dict(record) for record in records]
         for record in records:
-            simulated = record.get("dry_run") is True or any(
-                str(record.get(key) or "").startswith("dry-run") for key in ("video_id", "youtube_video_id")
-            )
-            if simulated:
-                record.update(status="DRY_RUN", processing_status="DRY_RUN", youtube_video_id=None, youtube_url=None, url="")
-        self._current_records = list(records)
+            if record.get('dry_run') is True or any(str(record.get(key) or '').startswith('dry-run')
+                                                   for key in ('video_id', 'youtube_video_id')):
+                record.update(status='DRY_RUN', processing_status='DRY_RUN', youtube_video_id=None,
+                              youtube_url=None, url='')
+        self._all_records = records
+        self._scheduled_records = [r for r in records if self._status(r) == 'SCHEDULED']
+        self._render_records(records)
 
-        status_text_map = {
-            "NEW": "Mới tạo",
-            "METADATA_OK": "Đã lấy thông tin",
-            "DOWNLOADED": "Đã tải về",
-            "CONTENT_READY": "Nội dung sẵn sàng",
-            "UPLOADING": "Đang tải lên...",
-            "UPLOADED": "Đã tải lên",
-            "SCHEDULED": "Đã hẹn giờ",
-            "DRY_RUN": "Chạy thử",
-            "FAILED": "Thất bại",
-            "CANCELLED": "Đã hủy",
-        }
-
-        if not records:
-            self.table.setVisible(False)
-            self.empty_history.setVisible(True)
-            self.table.setRowCount(0)
-            return
-
-        self.empty_history.setVisible(False)
-        self.table.setVisible(True)
-        self.table.setRowCount(len(records))
-        for row, rec in enumerate(records):
-            source_id = str(rec.get("tiktok_video_id") or rec.get("video_id") or "")
-            source_path = rec.get("local_mp4_path") or rec.get("path") or rec.get("local_video_path")
-            if source_id and not source_id.startswith(("dry-run", "local-")):
-                vid_id = source_id
-            elif source_path:
-                vid_id = Path(str(source_path).replace("\\", "/")).name
+    def _render_records(self, records):
+        selected = self.combo_status.currentData() or 'all'
+        visible = [r for r in records if selected == 'all' or self._presentation(r)[2] == selected]
+        self._current_records = visible
+        self.count_label.setText(f'{len(visible)} video')
+        # Qt deletes replaced cell widgets later. Hide them now so a refresh or
+        # resize cannot leave old badges/buttons painted over another column.
+        for old_row in range(self.table.rowCount()):
+            for column in (3, 4):
+                previous = self.table.cellWidget(old_row, column)
+                if previous is not None:
+                    previous.hide()
+        self.table.clearContents()
+        self.table.setRowCount(len(visible))
+        self.table.setVisible(bool(visible))
+        self.empty_history.setVisible(not visible)
+        accounts = {a.id: a.title for a in self.services.connection.accounts}
+        current = self.services.connection.channel
+        if current:
+            accounts[current.id] = current.title
+        for row, record in enumerate(visible):
+            title = str(record.get('youtube_title') or record.get('title') or 'Không tiêu đề')
+            channel = str(accounts.get(record.get('channel_id')) or record.get('channel_title') or '—')
+            due = self._publish_time(record)
+            when = due.astimezone().strftime('%d/%m/%Y %H:%M') if due else '—'
+            status, kind, category = self._presentation(record)
+            if due and self._status(record) == 'SCHEDULED':
+                seconds = int((due - datetime.now(timezone.utc)).total_seconds())
+                when += ('\nCòn %dh %02dm' % (seconds // 3600, seconds % 3600 // 60)
+                         if seconds > 0 else '\nĐã đến giờ · Chờ xác nhận')
+            for column, text in enumerate((title, channel, when, status)):
+                item = QTableWidgetItem(text)
+                if column == 0:
+                    item.setToolTip(title)
+                self.table.setItem(row, column, item)
+            self.table.setCellWidget(row, 3, StatusBadge(status=status, badge_type=kind))
+            action = QWidget(self.table)
+            bar = QHBoxLayout(action)
+            bar.setContentsMargins(4, 6, 4, 6)
+            bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            video_id = record.get('youtube_video_id')
+            import re
+            if self._status(record) != 'DRY_RUN' and re.fullmatch(r'[A-Za-z0-9_-]{11}', str(video_id or '')):
+                url = 'https://www.youtube.com/watch?v=' + video_id
+                button = _i18n.ui(AppButton('Mở', variant='secondary', icon_name='link', parent=action))
+                button.setFixedHeight(32)
+                button.clicked.connect(lambda _checked=False, link=url: QDesktopServices.openUrl(QUrl(link)))
+                bar.addWidget(button)
             else:
-                vid_id = "—"
+                bar.addWidget(QLabel('—', action))
+            self.table.setCellWidget(row, 4, action)
 
-            title = str(rec.get("youtube_title") or rec.get("title") or "Không tiêu đề")
-            raw_status = rec.get("processing_status") or rec.get("status")
-            status_val = raw_status.value if hasattr(raw_status, "value") else str(raw_status or "NEW")
-            status_display = status_text_map.get(status_val, status_val)
-            privacy = str(rec.get("privacy_status") or rec.get("privacy") or "private")
-            url = str(rec.get("url") or rec.get("youtube_url") or "")
-            path_str = str(rec.get("path") or rec.get("local_video_path") or "")
-
-            item_id = QTableWidgetItem(vid_id)
-            item_id.setFlags(item_id.flags() ^ Qt.ItemFlag.ItemIsEditable)
-            self.table.setItem(row, 0, item_id)
-
-            item_title = QTableWidgetItem(title)
-            item_title.setFlags(item_title.flags() ^ Qt.ItemFlag.ItemIsEditable)
-            self.table.setItem(row, 1, item_title)
-
-            item_status = QTableWidgetItem(status_display)
-            item_status.setFlags(item_status.flags() ^ Qt.ItemFlag.ItemIsEditable)
-            self.table.setItem(row, 2, item_status)
-
-            item_priv = QTableWidgetItem(privacy)
-            item_priv.setFlags(item_priv.flags() ^ Qt.ItemFlag.ItemIsEditable)
-            self.table.setItem(row, 3, item_priv)
-
-            # Action cell
-            action_widget = QWidget()
-            a_layout = QHBoxLayout(action_widget)
-            a_layout.setContentsMargins(4, 2, 4, 2)
-            a_layout.setSpacing(6)
-
-            btn_resume = AppButton("Tiếp tục", variant="primary", icon_name="play")
-            btn_resume.setEnabled(status_val != "DRY_RUN")
-            btn_resume.setFixedHeight(28)
-            btn_resume.setStyleSheet("padding: 2px 8px; font-size: 12px;")
-            btn_resume.setToolTip("Tiếp tục tác vụ này trong Tổng quan")
-            btn_resume.clicked.connect(lambda _, r=rec: self._resume_job(r))
-            a_layout.addWidget(btn_resume)
-
-            btn_folder = AppButton("Thư mục", variant="secondary", icon_name="folder")
-            btn_folder.setFixedHeight(28)
-            btn_folder.setStyleSheet("padding: 2px 8px; font-size: 12px;")
-            btn_folder.setToolTip("Mở thư mục chứa video trên máy tính")
-            btn_folder.clicked.connect(lambda _, p=path_str: self._open_mp4_folder(p))
-            a_layout.addWidget(btn_folder)
-
-            if url:
-                btn_open = AppButton("YouTube", variant="secondary", icon_name="link")
-                btn_open.setFixedHeight(28)
-                btn_open.setStyleSheet("padding: 2px 8px; font-size: 12px;")
-                btn_open.setToolTip("Mở video trên YouTube")
-                btn_open.clicked.connect(lambda _, u=url: QDesktopServices.openUrl(QUrl(u)))
-                a_layout.addWidget(btn_open)
-
-            self.table.setCellWidget(row, 4, action_widget)
+    @Slot(int, int)
+    def _show_video_details(self, row, column):
+        if column == 0 and 0 <= row < len(self._current_records):
+            VideoDetailsDialog(self._current_records[row], self).exec()
 
     def _open_mp4_folder(self, path_str: str) -> None:
         p = Path(path_str) if path_str else None
@@ -416,98 +366,19 @@ class HistoryPage(QWidget):
     # SCHEDULED LOGIC
     # =========================================================================
     @Slot()
-    def refresh_scheduled(self) -> None:
-        try:
-            records = self.services.history.list_scheduled()
-            # API-confirmed publications remain visible in the schedule tracker.
-            published = self.services.history.list(status=JobStatus.UPLOADED)
-            records = list(records) + [r for r in published if r.get("scheduled_at")
-                and r.get("schedule_public_confirmed") is True
-                and r.get("id") not in {row.get("id") for row in records}]
-        except Exception:
-            records = []
-
-        self._scheduled_records = [dict(r) for r in records]
-        self._render_scheduled(self._scheduled_records)
-
-    def _render_scheduled(self, records: list[dict]) -> None:
-        if not records:
-            self.tbl_scheduled.setVisible(False)
-            self.empty_scheduled.setVisible(True)
-            self.tbl_scheduled.setRowCount(0)
-            return
-
-        self.empty_scheduled.setVisible(False)
-        self.tbl_scheduled.setVisible(True)
-        self.tbl_scheduled.setRowCount(len(records))
-        now_utc = datetime.now(timezone.utc)
-
-        for row, rec in enumerate(records):
-            vid_id = str(rec.get("youtube_video_id") or rec.get("video_id") or rec.get("tiktok_video_id") or "—")
-            title = str(rec.get("youtube_title") or rec.get("title") or "Không tiêu đề")
-            channel = str(rec.get("channel_title") or rec.get("channel_id") or "Kênh mặc định")
-
-            # Publish at
-            pub_at = rec.get("scheduled_at") or rec.get("publish_at")
-            if isinstance(pub_at, str):
-                try:
-                    pub_at = datetime.fromisoformat(pub_at)
-                except Exception:
-                    pub_at = None
-            if isinstance(pub_at, datetime) and (pub_at.tzinfo is None or pub_at.utcoffset() is None):
-                pub_at = None
-            if isinstance(pub_at, datetime):
-                # Convert to machine local time
-                local_dt = pub_at.astimezone()
-                time_str = local_dt.strftime("%d/%m/%Y %H:%M:%S")
-
-                if pub_at <= now_utc:
-                    cd_str = "Đã đến giờ"
-                    is_due = True
-                else:
-                    diff = pub_at - now_utc
-                    sec = int(diff.total_seconds())
-                    hrs = sec // 3600
-                    mins = (sec % 3600) // 60
-                    cd_str = f"Còn {hrs}h {mins:02d}m"
-                    is_due = False
-            else:
-                time_str = "Chưa xác định"
-                cd_str = "—"
-                is_due = False
-
-            # Status
-            raw_st = rec.get("processing_status") or rec.get("status")
-            st_val = raw_st.value if hasattr(raw_st, "value") else str(raw_st or "")
-            if (rec.get("schedule_public_confirmed") is True and st_val == "UPLOADED"
-                    and rec.get("privacy_status") == "public"):
-                status_label = "Đã công khai"
-                badge_type = "success"
-            elif rec.get("schedule_needs_review") or is_due or pub_at is None or st_val == "UPLOADED":
-                status_label = "Cần kiểm tra"
-                badge_type = "warning"
-            else:
-                status_label = "Chờ công khai"
-                badge_type = "warning"
-
-            self.tbl_scheduled.setItem(row, 0, QTableWidgetItem(vid_id))
-            self.tbl_scheduled.setItem(row, 1, QTableWidgetItem(title))
-            self.tbl_scheduled.setItem(row, 2, QTableWidgetItem(channel))
-            self.tbl_scheduled.setItem(row, 3, QTableWidgetItem(time_str))
-            self.tbl_scheduled.setItem(row, 4, QTableWidgetItem(cd_str))
-
-            badge = StatusBadge(status=status_label, badge_type=badge_type)
-            self.tbl_scheduled.setCellWidget(row, 5, badge)
+    def refresh_scheduled(self):
+        self.refresh_history()
 
     @Slot()
-    def _update_countdowns(self) -> None:
-        if self._scheduled_records:
-            self._render_scheduled(self._scheduled_records)
+    def _update_countdowns(self):
+        if self.isVisible():
+            self._render_records(self._all_records)
 
     @Slot()
-    def _on_sync_scheduled_clicked(self) -> None:
+    def _on_sync_scheduled_clicked(self, silent=False) -> None:
         if self._sync_worker is not None:
             return
+        self._sync_silent = bool(silent)
         self.prog_sync.setVisible(True)
         self.btn_sync_scheduled.setEnabled(False)
         self.btn_refresh_scheduled.setEnabled(False)
@@ -524,9 +395,11 @@ class HistoryPage(QWidget):
         self.prog_sync.setVisible(False)
         self.btn_sync_scheduled.setEnabled(True)
         self.btn_refresh_scheduled.setEnabled(True)
-        self.refresh_scheduled()
         self.refresh_history()
 
+        silent, self._sync_silent = self._sync_silent, False
+        if silent:
+            return
         count = len(published)
         if count > 0:
             self._notify("success", "Đồng bộ thành công", f"Đã có {count} video được YouTube chính thức công khai!")
@@ -539,7 +412,10 @@ class HistoryPage(QWidget):
         self.prog_sync.setVisible(False)
         self.btn_sync_scheduled.setEnabled(True)
         self.btn_refresh_scheduled.setEnabled(True)
-        self._notify("error", "Lỗi đồng bộ lịch đăng", err)
+        self.refresh_history()
+        silent, self._sync_silent = self._sync_silent, False
+        if not silent:
+            self._notify("error", "Lỗi đồng bộ lịch đăng", err)
 
 
 HistorySchedulePage = HistoryPage

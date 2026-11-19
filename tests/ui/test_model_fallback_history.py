@@ -100,7 +100,22 @@ def test_history_uses_tiktok_id_or_filename(qtbot, record, expected):
     qtbot.addWidget(window)
     page = window.page_history
     page.refresh_history()
-    assert page.table.item(0, 0).text() == expected
-    assert page.table.item(0, 2).text() == 'Chạy thử'
+    from app.ui.pages.history_page import VideoDetailsDialog
+    from PySide6.QtWidgets import QLabel
+    details = VideoDetailsDialog(page._current_records[0], page)
+    assert expected in ' '.join(label.text() for label in details.findChildren(QLabel))
+    assert page.table.item(0, 3).text() == 'Chạy thử'
     assert not page._current_records[0]['youtube_video_id']
     assert not page._current_records[0]['youtube_url']
+
+
+
+def test_generator_default_model_can_be_overridden_for_one_request(generator):
+    service,settings,client=generator
+    settings.set('gemini_default_model','gemini-3.1-flash-lite')
+    client.models.generate_content.return_value=success()
+    service.generate(META,{})
+    assert client.models.generate_content.call_args.kwargs['model']=='gemini-3.1-flash-lite'
+    service.generate(META,{'model':'gemini-2.5-flash-lite'})
+    assert client.models.generate_content.call_args.kwargs['model']=='gemini-2.5-flash-lite'
+    assert settings.get('gemini_default_model')=='gemini-3.1-flash-lite'

@@ -107,6 +107,7 @@ class ToastNotification(QFrame):
         content_box.setContentsMargins(0, 0, 0, 0)
 
         self.lbl_title = QLabel(self.title_text, self)
+        self.lbl_title.setWordWrap(True)
         self.lbl_title.setStyleSheet(
             f"font-size: {tokens.FONT_SIZE_BASE}px; font-weight: 700; color: {tokens.TEXT_PRIMARY}; border: none; background: transparent;"
         )
@@ -222,6 +223,9 @@ class ToastManager(QObject):
             parent=self.window,
         )
         self.toasts.append(toast)
+        toast.ensurePolished()
+        toast.adjustSize()
+        toast.resize(toast.width(), max(toast.sizeHint().height(), toast.heightForWidth(toast.width())))
         toast.show()
         self.reposition()
         return toast
@@ -246,7 +250,7 @@ class ToastManager(QObject):
         current_y = win_h - margin_bottom
 
         for toast in reversed(self.toasts):
-            t_height = toast.sizeHint().height()
+            t_height = toast.height()
             current_y -= t_height
             toast_x = max(10, win_w - toast.width() - margin_right)
             toast.move(toast_x, max(10, current_y))

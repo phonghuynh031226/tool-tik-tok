@@ -9,6 +9,7 @@ from PySide6.QtCore import QObject, Signal, Slot, QThreadPool
 from PySide6.QtWidgets import QLabel
 from typing import Optional
 
+from app.ui import i18n as _i18n
 from app.contracts import (
     ContentGenerator, HistoryRepository, SecretStore, SettingsStore,
     TikTokService, YouTubeService, ChannelAccount, ChannelInfo,
@@ -178,10 +179,10 @@ class ServiceContainer:
                 if window.property('studio_fake_banner'):
                     return
                 window.setProperty('studio_fake_banner', True)
-                banner = QLabel('CHẾ ĐỘ GIẢ LẬP — Không kết nối hay upload thật', window)
+                banner = _i18n.ui(QLabel('CHẾ ĐỘ GIẢ LẬP — Không kết nối hay upload thật', window))
                 window.statusBar().addPermanentWidget(banner, 1)
             else:
-                banner = QLabel('CHẾ ĐỘ GIẢ LẬP — Không kết nối hay upload thật', page)
+                banner = _i18n.ui(QLabel('CHẾ ĐỘ GIẢ LẬP — Không kết nối hay upload thật', page))
                 page.layout().insertWidget(0, banner)
             banner.setObjectName('simulationBanner')
             banner.setStyleSheet('background:#854d0e;color:white;padding:8px;font-weight:bold;')

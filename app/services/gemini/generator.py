@@ -337,7 +337,9 @@ class GeminiContentGenerator(ContentGenerator):
         if self._client_factory:
             return self._client_factory(api_key)
         from google import genai
-        return genai.Client(api_key=api_key)
+        from google.genai import types
+        return genai.Client(api_key=api_key, http_options=types.HttpOptions(
+            timeout=60000, retry_options=types.HttpRetryOptions(attempts=1)))
 
     def _handle_api_error(self, exc: Exception, model_name: str = "") -> None:
         """Map SDK errors to safe Vietnamese application exceptions and log details.
@@ -518,7 +520,7 @@ class GeminiContentGenerator(ContentGenerator):
         """Try at most three distinct models, switching ONLY after a 404."""
         self.last_model_notice = ''
         self.last_successful_model = ''
-        saved = self._settings_store.get('gemini_model') if self._settings_store else None
+        saved = (self._settings_store.get('gemini_default_model') or self._settings_store.get('gemini_model')) if self._settings_store else None
         model = settings.get('model') or saved or select_preferred_model(self._available_models or [])[0]
         original = model
         tried = []
@@ -625,7 +627,13 @@ class GeminiContentGenerator(ContentGenerator):
 
                 try:
                     # Run SDK call with remaining timeout in worker thread
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    # Bound transport I/O and never wait for a hung SDK call on timeout.
+                    config.http_options = types.HttpOptions(
+                        timeout=max(1, int(remaining * 1000)),
+                        retry_options=types.HttpRetryOptions(attempts=1),
+                    )
+                    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                    try:
                         future = executor.submit(
                             client.models.generate_content,
                             model=model_name,
@@ -635,13 +643,12 @@ class GeminiContentGenerator(ContentGenerator):
                         try:
                             response = future.result(timeout=remaining)
                         except concurrent.futures.TimeoutError as te:
-                            logger.error(
-                                "Gemini generate_content call timed out after %.1fs",
-                                remaining,
-                            )
+                            future.cancel()
                             raise TimeoutError(
                                 f"Quá thời gian phản hồi từ máy chủ Google Gemini (timeout {int(timeout_seconds)} giây)."
                             ) from te
+                    finally:
+                        executor.shutdown(wait=False, cancel_futures=True)
 
                     raw_text = getattr(response, "text", "") or ""
                     try:

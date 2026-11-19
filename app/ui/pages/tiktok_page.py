@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QProgressBar, QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 
+from app.ui import i18n as _i18n
 from app.contracts import DownloadResult, VideoMeta
 from app.ui.components import AppButton, Card
 from app.ui.services import ServiceContainer
@@ -49,14 +50,14 @@ class TikTokPage(QWidget):
         layout.setSpacing(18)
 
         # Header
-        header = QLabel("Tải Video TikTok Chất Lượng Cao", container)
+        header = _i18n.ui(QLabel("Tải Video TikTok Chất Lượng Cao", container))
         header.setStyleSheet("font-size: 20px; font-weight: 700; color: #ffffff;")
         layout.addWidget(header)
 
-        sub = QLabel(
+        sub = _i18n.ui(QLabel(
             "Chỉ tải video bạn sở hữu hoặc được phép sử dụng, bóc tách thông tin và chuẩn bị cho pipeline.",
             container,
-        )
+        ))
         sub.setProperty("class", "hintLabel")
         layout.addWidget(sub)
 
@@ -65,7 +66,7 @@ class TikTokPage(QWidget):
         c_layout = QVBoxLayout()
         c_layout.setSpacing(12)
 
-        lbl_url = QLabel("Đường dẫn TikTok (URL):", card)
+        lbl_url = _i18n.ui(QLabel("Đường dẫn TikTok (URL):", card))
         lbl_url.setProperty("class", "fieldLabel")
         c_layout.addWidget(lbl_url)
 
@@ -75,15 +76,15 @@ class TikTokPage(QWidget):
         self.edit_url.textChanged.connect(lambda t: setattr(self.state, "url", t.strip()))
         row.addWidget(self.edit_url, stretch=1)
 
-        self.btn_paste = AppButton("Dán", variant="secondary", icon_name="content-paste", parent=card)
+        self.btn_paste = _i18n.ui(AppButton("Dán", variant="secondary", icon_name="content-paste", parent=card))
         self.btn_paste.clicked.connect(self._on_paste)
         row.addWidget(self.btn_paste)
 
-        self.btn_download = AppButton("Bắt đầu tải", variant="primary", icon_name="download", parent=card)
+        self.btn_download = _i18n.ui(AppButton("Bắt đầu tải", variant="primary", icon_name="download", parent=card))
         self.btn_download.clicked.connect(self._on_download)
         row.addWidget(self.btn_download)
 
-        self.btn_pick_file = AppButton("Chọn MP4 từ máy", variant="secondary", icon_name="folder-open", parent=card)
+        self.btn_pick_file = _i18n.ui(AppButton("Chọn MP4 từ máy", variant="secondary", icon_name="folder-open", parent=card))
         self.btn_pick_file.clicked.connect(self._on_pick_file)
         row.addWidget(self.btn_pick_file)
         c_layout.addLayout(row)
@@ -103,24 +104,24 @@ class TikTokPage(QWidget):
         d_layout = QGridLayout()
         d_layout.setSpacing(10)
 
-        self.lbl_title = QLabel("Tiêu đề: -")
+        self.lbl_title = _i18n.ui(QLabel("Tiêu đề: -"))
         self.lbl_title.setWordWrap(True)
         self.lbl_title.setStyleSheet("font-weight: 600; color: #f8fafc;")
         d_layout.addWidget(self.lbl_title, 0, 0, 1, 2)
 
-        self.lbl_author = QLabel("Kênh tác giả: -")
+        self.lbl_author = _i18n.ui(QLabel("Kênh tác giả: -"))
         self.lbl_author.setProperty("class", "hintLabel")
         d_layout.addWidget(self.lbl_author, 1, 0)
 
-        self.lbl_duration = QLabel("Thời lượng: -")
+        self.lbl_duration = _i18n.ui(QLabel("Thời lượng: -"))
         self.lbl_duration.setProperty("class", "hintLabel")
         d_layout.addWidget(self.lbl_duration, 1, 1)
 
-        self.lbl_dimensions = QLabel("Kích thước: -")
+        self.lbl_dimensions = _i18n.ui(QLabel("Kích thước: -"))
         self.lbl_dimensions.setProperty("class", "hintLabel")
         d_layout.addWidget(self.lbl_dimensions, 2, 0)
 
-        self.lbl_file_path = QLabel("Đường dẫn file lưu: -")
+        self.lbl_file_path = _i18n.ui(QLabel("Đường dẫn file lưu: -"))
         self.lbl_file_path.setProperty("class", "hintLabel")
         d_layout.addWidget(self.lbl_file_path, 2, 1)
 
@@ -141,15 +142,13 @@ class TikTokPage(QWidget):
             self.edit_url.blockSignals(False)
 
         if self.state.meta:
-            self.lbl_title.setText(f"Tiêu đề: {self.state.meta.title}")
-            self.lbl_author.setText(f"Kênh tác giả: {self.state.meta.author}")
-            self.lbl_duration.setText(f"Thời lượng: {self.state.meta.duration or 'Không rõ'}s")
-            self.lbl_dimensions.setText(
-                f"Kích thước: {self.state.meta.width or 0} x {self.state.meta.height or 0}"
-            )
+            _i18n.format_text(self.lbl_title, 'Tiêu đề: {0}', f'{self.state.meta.title}')
+            _i18n.format_text(self.lbl_author, 'Kênh tác giả: {0}', f'{self.state.meta.author}')
+            _i18n.format_text(self.lbl_duration, 'Thời lượng: {0}s', f"{self.state.meta.duration or 'Không rõ'}")
+            _i18n.format_text(self.lbl_dimensions, 'Kích thước: {0} x {1}', f'{self.state.meta.width or 0}', f'{self.state.meta.height or 0}')
 
         if self.state.local_video_path:
-            self.lbl_file_path.setText(f"Đường dẫn file: {self.state.local_video_path}")
+            _i18n.format_text(self.lbl_file_path, 'Đường dẫn file: {0}', f'{self.state.local_video_path}')
 
     @Slot()
     def _on_paste(self) -> None:

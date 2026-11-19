@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+from app.ui import i18n as _i18n
 from app.contracts import JobStatus, UploadRequest, UploadResult
 from app.ui.components import AppButton, Card, UploadConfirmDialog
 from app.ui.services import ServiceContainer
@@ -54,14 +55,14 @@ class YouTubePage(QWidget):
         layout.setSpacing(18)
 
         # Header
-        header = QLabel("Đăng Video Lên Kênh YouTube", container)
+        header = _i18n.ui(QLabel("Đăng Video Lên Kênh YouTube", container))
         header.setStyleSheet("font-size: 20px; font-weight: 700; color: #ffffff;")
         layout.addWidget(header)
 
-        sub = QLabel(
+        sub = _i18n.ui(QLabel(
             "Cấu hình xuất bản video an toàn. Mặc định luôn là chế độ Riêng tư (Private) để bạn kiểm duyệt trước.",
             container,
-        )
+        ))
         sub.setProperty("class", "hintLabel")
         layout.addWidget(sub)
 
@@ -75,16 +76,16 @@ class YouTubePage(QWidget):
         ch_layout.addWidget(self.lbl_channel_indicator)
 
         info_box = QVBoxLayout()
-        self.lbl_channel_name = QLabel("Kênh: Đang kết nối...")
+        self.lbl_channel_name = _i18n.ui(QLabel("Kênh: Đang kết nối..."))
         self.lbl_channel_name.setStyleSheet("font-size: 15px; font-weight: 700; color: #ffffff;")
         info_box.addWidget(self.lbl_channel_name)
 
-        self.lbl_channel_id = QLabel("ID kênh: -")
+        self.lbl_channel_id = _i18n.ui(QLabel("ID kênh: -"))
         self.lbl_channel_id.setProperty("class", "hintLabel")
         info_box.addWidget(self.lbl_channel_id)
         ch_layout.addLayout(info_box, stretch=1)
 
-        self.btn_refresh = AppButton("Làm mới kết nối", variant="ghost", icon_name="refresh", parent=ch_card)
+        self.btn_refresh = _i18n.ui(AppButton("Làm mới kết nối", variant="ghost", icon_name="refresh", parent=ch_card))
         self.btn_refresh.clicked.connect(self._refresh_channel)
         ch_layout.addWidget(self.btn_refresh)
 
@@ -97,25 +98,25 @@ class YouTubePage(QWidget):
         p_layout.setSpacing(14)
 
         # Privacy
-        lbl_p = QLabel("Chế độ quyền riêng tư:", params_card)
+        lbl_p = _i18n.ui(QLabel("Chế độ quyền riêng tư:", params_card))
         lbl_p.setProperty("class", "fieldLabel")
         p_layout.addWidget(lbl_p, 0, 0)
 
         self.combo_privacy = QComboBox(params_card)
-        self.combo_privacy.addItem("Riêng tư (Private) - Mặc định an toàn", "private")
-        self.combo_privacy.addItem("Không công khai (Unlisted)", "unlisted")
-        self.combo_privacy.addItem("Công khai (Public)", "public")
+        _i18n.add_item(self.combo_privacy, "Riêng tư (Private) - Mặc định an toàn", "private")
+        _i18n.add_item(self.combo_privacy, "Không công khai (Unlisted)", "unlisted")
+        _i18n.add_item(self.combo_privacy, "Công khai (Public)", "public")
         self.combo_privacy.currentIndexChanged.connect(self._on_privacy_changed)
         p_layout.addWidget(self.combo_privacy, 1, 0)
 
         # Made for Kids: KHÔNG CHỌN SẴN, BẮT BUỘC CHỌN
-        lbl_k = QLabel("Nội dung dành cho trẻ em? (Bắt buộc chọn):", params_card)
+        lbl_k = _i18n.ui(QLabel("Nội dung dành cho trẻ em? (Bắt buộc chọn):", params_card))
         lbl_k.setProperty("class", "fieldLabel")
         p_layout.addWidget(lbl_k, 0, 1)
 
         kids_row = QHBoxLayout()
-        self.radio_kids_yes = QRadioButton("Có, dành cho trẻ em", params_card)
-        self.radio_kids_no = QRadioButton("Không, không dành cho trẻ em", params_card)
+        self.radio_kids_yes = _i18n.ui(QRadioButton("Có, dành cho trẻ em", params_card))
+        self.radio_kids_no = _i18n.ui(QRadioButton("Không, không dành cho trẻ em", params_card))
         self.kids_group = QButtonGroup(params_card)
         self.kids_group.addButton(self.radio_kids_yes, 1)
         self.kids_group.addButton(self.radio_kids_no, 0)
@@ -130,19 +131,19 @@ class YouTubePage(QWidget):
         params_card.add_layout(p_layout)
 
         # Rights confirmation checkbox (MANDATORY)
-        self.chk_rights = QCheckBox(
+        self.chk_rights = _i18n.ui(QCheckBox(
             "Tôi xác nhận có toàn quyền sở hữu hoặc quyền sử dụng hợp pháp video này theo chính sách YouTube.",
             params_card,
-        )
+        ))
         self.chk_rights.setStyleSheet("font-weight: 600; color: #f8fafc;")
         self.chk_rights.toggled.connect(self._on_rights_changed)
         params_card.add_widget(self.chk_rights)
 
         # Dry-run checkbox
-        self.chk_dry_run = QCheckBox(
+        self.chk_dry_run = _i18n.ui(QCheckBox(
             "Chế độ chạy thử (Dry-run) - Chạy toàn bộ luồng nhưng không gọi tải lên YouTube thật",
             params_card,
-        )
+        ))
         self.chk_dry_run.setStyleSheet("color: #93c5fd;")
         self.chk_dry_run.toggled.connect(self._on_dry_run_toggled)
         params_card.add_widget(self.chk_dry_run)
@@ -154,11 +155,11 @@ class YouTubePage(QWidget):
         s_layout = QVBoxLayout()
         s_layout.setSpacing(8)
 
-        self.lbl_sum_file = QLabel("Tập tin video: Chưa có")
+        self.lbl_sum_file = _i18n.ui(QLabel("Tập tin video: Chưa có"))
         self.lbl_sum_file.setStyleSheet("color: #cbd5e1;")
         s_layout.addWidget(self.lbl_sum_file)
 
-        self.lbl_sum_title = QLabel("Tiêu đề: Chưa có")
+        self.lbl_sum_title = _i18n.ui(QLabel("Tiêu đề: Chưa có"))
         self.lbl_sum_title.setStyleSheet("font-weight: 600; color: #f8fafc;")
         s_layout.addWidget(self.lbl_sum_title)
 
@@ -167,13 +168,13 @@ class YouTubePage(QWidget):
 
         # Upload Action Bar
         act_row = QHBoxLayout()
-        self.btn_upload = AppButton("Tải lên YouTube", variant="primary", icon_name="upload", parent=container)
+        self.btn_upload = _i18n.ui(AppButton("Tải lên YouTube", variant="primary", icon_name="upload", parent=container))
         self.btn_upload.setMinimumHeight(44)
         self.btn_upload.setEnabled(False)  # Locked until prerequisites met
         self.btn_upload.clicked.connect(self._on_upload)
         act_row.addWidget(self.btn_upload, stretch=1)
 
-        self.btn_cancel = AppButton("Hủy quá trình đăng", variant="danger", icon_name="close-circle", parent=container)
+        self.btn_cancel = _i18n.ui(AppButton("Hủy quá trình đăng", variant="danger", icon_name="close-circle", parent=container))
         self.btn_cancel.setMinimumHeight(44)
         self.btn_cancel.setVisible(False)
         self.btn_cancel.clicked.connect(self._on_cancel)
@@ -196,7 +197,7 @@ class YouTubePage(QWidget):
         r_layout = QVBoxLayout(self.result_box)
         r_layout.setSpacing(8)
 
-        self.lbl_result_status = QLabel("Tải lên thành công!")
+        self.lbl_result_status = _i18n.ui(QLabel("Tải lên thành công!"))
         self.lbl_result_status.setStyleSheet("font-size: 15px; font-weight: 700; color: #ffffff;")
         r_layout.addWidget(self.lbl_result_status)
         self.lbl_upload_summary = QLabel(self.result_box)
@@ -209,11 +210,11 @@ class YouTubePage(QWidget):
         r_layout.addWidget(self.lbl_result_link)
 
         r_btns = QHBoxLayout()
-        self.btn_open = AppButton("Mở xem trên YouTube", variant="secondary", icon_name="open-in-new", parent=self.result_box)
+        self.btn_open = _i18n.ui(AppButton("Mở xem trên YouTube", variant="secondary", icon_name="open-in-new", parent=self.result_box))
         self.btn_open.clicked.connect(self._on_open_youtube)
         r_btns.addWidget(self.btn_open)
 
-        self.btn_copy = AppButton("Sao chép liên kết", variant="secondary", icon_name="content-copy", parent=self.result_box)
+        self.btn_copy = _i18n.ui(AppButton("Sao chép liên kết", variant="secondary", icon_name="content-copy", parent=self.result_box))
         self.btn_copy.clicked.connect(self._on_copy_link)
         r_btns.addWidget(self.btn_copy)
         r_btns.addStretch()
@@ -243,11 +244,11 @@ class YouTubePage(QWidget):
 
     def _sync_state(self) -> None:
         if self.state.local_video_path:
-            self.lbl_sum_file.setText(f"Tập tin: {self.state.local_video_path.name}")
+            _i18n.format_text(self.lbl_sum_file, 'Tập tin: {0}', f'{self.state.local_video_path.name}')
         else:
-            self.lbl_sum_file.setText("Tập tin: Chưa có")
+            _i18n.set_text(self.lbl_sum_file, "Tập tin: Chưa có")
 
-        self.lbl_sum_title.setText(f"Tiêu đề: {self.state.title or '(Trống)'}")
+        _i18n.format_text(self.lbl_sum_title, 'Tiêu đề: {0}', f"{self.state.title or '(Trống)'}")
 
         # Sync privacy
         idx = self.combo_privacy.findData(self.state.privacy)
@@ -319,10 +320,10 @@ class YouTubePage(QWidget):
         has_video = bool(self.state.local_video_path)
         self.btn_upload.setEnabled(title_ok and kids_ok and rights_ok and has_video and self.services.upload_enabled(self.state.dry_run) and self.state.can_upload()[0])
         if self.state.dry_run:
-            self.btn_upload.setText("Chạy thử đăng YouTube (Dry-run)")
+            _i18n.set_text(self.btn_upload, "Chạy thử đăng YouTube (Dry-run)")
             self.btn_upload.set_icon_name("flask")
         else:
-            self.btn_upload.setText("Tải lên YouTube")
+            _i18n.set_text(self.btn_upload, "Tải lên YouTube")
             self.btn_upload.set_icon_name("upload")
 
     @Slot()

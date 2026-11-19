@@ -33,10 +33,10 @@ def test_canonical_schedule_and_overdue_private_need_review(qtbot, container):
     schedule(container)
     page = HistoryPage(JobState(), container)
     qtbot.addWidget(page)
-    assert page.tbl_scheduled.item(0, 0).text() == 'v' * 11
-    assert page.tbl_scheduled.item(0, 1).text() == 'YouTube title'
-    assert page.tbl_scheduled.item(0, 2).text() == 'UC' + 'a' * 22
-    assert page.tbl_scheduled.cellWidget(0, 5).lbl_text.text() == 'Cần kiểm tra'
+    assert page._current_records[0]['youtube_video_id'] == 'v' * 11
+    assert page.table.item(0, 0).text() == 'YouTube title'
+    assert page.table.item(0, 1).text() in ('Chosen verified channel', 'UC' + 'a' * 22)
+    assert page.table.cellWidget(0, 3).lbl_text.text() == 'Cần kiểm tra'
 
 
 @pytest.mark.parametrize('status,privacy,confirmed,expected', [
@@ -48,10 +48,10 @@ def test_canonical_schedule_and_overdue_private_need_review(qtbot, container):
 def test_public_requires_api_confirmation_marker(qtbot, container, status, privacy, confirmed, expected):
     page = HistoryPage(JobState(), container)
     qtbot.addWidget(page)
-    page._render_scheduled([dict(status=status, privacy_status=privacy,
+    page._render_records([dict(status=status, privacy_status=privacy,
         schedule_public_confirmed=confirmed, schedule_needs_review=True,
         scheduled_at=datetime.now(timezone.utc) - timedelta(hours=1))])
-    assert page.tbl_scheduled.cellWidget(0, 5).lbl_text.text() == expected
+    assert page.table.cellWidget(0, 3).lbl_text.text() == expected
 
 
 def test_refresh_button_syncs_once_and_retains_confirmed_public(qtbot, container):
@@ -69,8 +69,8 @@ def test_refresh_button_syncs_once_and_retains_confirmed_public(qtbot, container
     qtbot.waitUntil(lambda: page._sync_worker is None, timeout=5000)
     assert container.youtube.sync_scheduled.call_count == 1
     assert page.btn_refresh_scheduled.isEnabled()
-    assert page.tbl_scheduled.rowCount() == 1
-    assert page.tbl_scheduled.cellWidget(0, 5).lbl_text.text() == 'Đã công khai'
+    assert page.table.rowCount() == 1
+    assert page.table.cellWidget(0, 3).lbl_text.text() == 'Đã công khai'
 
 
 def test_request_uses_shared_selected_channel(qtbot, container, tmp_path, monkeypatch):
@@ -111,3 +111,45 @@ def test_scheduled_result_avoids_duplicate_backend_history(qtbot, container, tmp
     assert page.lbl_result_status.text() == 'Đã hẹn giờ'
     page._on_upload_result(UploadResult(result.video_id, result.url, result.channel_id))
     assert page.lbl_result_status.text() == 'Đã tải lên'
+
+
+
+def test_visible_history_auto_syncs_public_status_from_api(qtbot,container):
+    job_id=schedule(container)
+    def sync():
+        container.history.update(job_id,dict(status=JobStatus.UPLOADED,privacy_status='public',
+            schedule_public_confirmed=True,schedule_needs_review=False))
+        return [UploadResult('v'*11,'https://www.youtube.com/watch?v='+'v'*11,'UC'+'a'*22)]
+    container.youtube.sync_scheduled.side_effect=sync
+    page=HistoryPage(JobState(),container)
+    qtbot.addWidget(page)
+    page.show()
+    qtbot.waitUntil(lambda: container.history.get(job_id)['privacy_status']=='public',timeout=2000)
+    qtbot.waitUntil(lambda: page._sync_worker is None,timeout=2000)
+    assert page.table.cellWidget(0,3).lbl_text.text()=='Đã công khai'
+    assert container.youtube.sync_scheduled.call_count==1
+    assert page._schedule_poll_timer.isActive()
+    page.hide()
+    assert not page._schedule_poll_timer.isActive()
+
+
+def test_auto_sync_skips_hidden_busy_and_overlapping_calls(qtbot,container):
+    schedule(container)
+    page=HistoryPage(JobState(),container)
+    qtbot.addWidget(page)
+    pool=Mock()
+    page.thread_pool=pool
+    page._maybe_sync_scheduled()
+    pool.start.assert_not_called()
+    container.connection.busy=True
+    page.show()
+    qtbot.wait(50)
+    pool.start.assert_not_called()
+    container.connection.busy=False
+    page._maybe_sync_scheduled()
+    page._maybe_sync_scheduled()
+    pool.start.assert_called_once()
+    page._on_sync_finished([])
+    page.hide()
+    page._maybe_sync_scheduled()
+    pool.start.assert_called_once()

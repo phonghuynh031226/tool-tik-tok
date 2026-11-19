@@ -40,7 +40,7 @@ class _ModelLoader(QObject):
             self.deleteLater()
             return
         settings = self.services.settings
-        saved = settings.get("gemini_model") if settings else None
+        saved = (settings.get("gemini_default_model") or settings.get("gemini_model")) if settings else None
         chosen, switched = select_preferred_model(models, saved)
         with QSignalBlocker(self.combo):
             self.combo.clear()
@@ -50,6 +50,8 @@ class _ModelLoader(QObject):
             if index >= 0:
                 self.combo.setCurrentIndex(index)
         self.combo.setEnabled(True)
+        if settings and settings.get("gemini_default_model"):
+            settings.set("gemini_model", chosen)
         if switched and saved and self.notify:
             if settings:
                 settings.set("gemini_model", chosen)
@@ -68,7 +70,7 @@ def populate_models(combo, services, *, notify=True):
     if type(services.generator).__module__ == "app.services.fakes":
         loader.worker.run()
         return
-    saved = services.settings.get("gemini_model") if services.settings else None
+    saved = (services.settings.get("gemini_default_model") or services.settings.get("gemini_model")) if services.settings else None
     with QSignalBlocker(combo):
         combo.clear()
         combo.addItem(saved or "Đang tải mô hình AI…", saved)
