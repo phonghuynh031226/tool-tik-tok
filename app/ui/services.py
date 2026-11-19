@@ -127,6 +127,9 @@ class YouTubeConnection(QObject):
         from app.workers.service_workers import YouTubeConnectWorker, YouTubeRestoreWorker
         if self.busy:
             return
+        if not restore:
+            from app.workers.youtube_restore import invalidate_accounts
+            invalidate_accounts(service)
         self.clear()
         self.busy = True
         self.changed.emit()

@@ -503,3 +503,27 @@ ENGLISH.update({
     'Lưu ý: Thao tác này sẽ tải video trực tiếp lên kênh YouTube của bạn. Bạn phải đảm bảo đã kiểm tra nội dung và có toàn quyền sử dụng hợp pháp video này.': 'This uploads directly to your YouTube channel. Review the content and ensure you have permission to use the video.',
     'Lưu ý: Đây là chế độ chạy thử an toàn. Quy trình sẽ xác thực toàn bộ dữ liệu, mô phỏng tiến trình tải lên nhưng sẽ không thực sự tạo video trên kênh YouTube của bạn.': 'This is a safe dry run. The workflow validates the data and simulates upload without creating a video on YouTube.',
 })
+
+# Channel layout retained from main during merge; application copy only.
+ENGLISH.update({
+    'Mặc định': 'Default', 'Đã kết nối': 'Connected', 'Hết hạn': 'Expired',
+    'Xóa tài khoản': 'Remove account', 'Mã Video': 'Video ID', 'Tiêu đề': 'Title',
+    'Ngày đăng': 'Published', 'Chế độ': 'Visibility', 'Lượt xem': 'Views',
+    'Lượt thích': 'Likes', 'Bình luận': 'Comments', 'Công khai': 'Public',
+    'Riêng tư': 'Private', 'Không công khai': 'Unlisted',
+    'chưa có thời điểm cập nhật': 'update time unavailable',
+    'Chưa có tài khoản, hãy thêm tài khoản YouTube': 'No accounts yet. Add a YouTube account.',
+    'Kết nối kênh YouTube của bạn để bắt đầu tải lên video và xem thống kê.': 'Connect your YouTube channel to upload videos and view statistics.',
+    'Xác nhận xóa tài khoản': 'Confirm account removal',
+    "Bạn có chắc chắn muốn ngắt kết nối và xóa tài khoản '{0}' không?": "Disconnect and remove account '{0}'?",
+    'Thêm tài khoản thành công': 'Account added', 'Đã kết nối tài khoản: {0}': 'Connected account: {0}',
+    'Lỗi thao tác': 'Operation failed', 'Chưa chọn video': 'No video selected',
+    'Vui lòng chọn một dòng video trong bảng.': 'Select a video in the table.',
+})
+
+ENGLISH.update({
+    'Kênh chưa có video nào': 'No videos on this channel yet',
+    'Kênh YouTube này chưa có video đã đăng tải hoặc đang tải danh sách.': 'This channel has no uploaded videos, or its video list is loading.',
+    'Hãy kết nối tài khoản để bắt đầu quản lý và đăng tải video.': 'Connect an account to manage and upload videos.',
+    'Đang tải video…': 'Loading videos…', 'Video · {0}': 'Videos · {0}',
+})

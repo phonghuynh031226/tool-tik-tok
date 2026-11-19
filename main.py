@@ -1,46 +1,30 @@
-"""Desktop entry point using the production service container."""
-
+"""Clivo startup: native crash capture precedes environment isolation and Qt."""
 import sys
+from typing import TYPE_CHECKING
+from app.security.logging import configure_logging, enable_crash_logging
 
-# Match launcher isolation for direct `python main.py` execution as well.
-# Must run before Qt/FFmpeg and Google SDKs import native dependencies.
-from app.core.runtime_env import configure_native_environment
-configure_native_environment()
-
-# Set Windows AppUserModelID so taskbar groups under Clivo and displays official brand icon
-if sys.platform == "win32":
-    try:
-        import ctypes
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Clivo.App")
-    except Exception:
-        pass
-
-from PySide6.QtWidgets import QApplication, QMainWindow
-
-try:
-    from app.security.logging import configure_logging
-except ImportError:
-    try:
-        from pathlib import Path
-        main_repo = Path(__file__).resolve().parent.parent / "tool-tik-tok"
-        if main_repo.exists() and str(main_repo) not in sys.path:
-            sys.path.append(str(main_repo))
-        from app.security.logging import configure_logging
-    except Exception:
-        configure_logging = None
+if TYPE_CHECKING:
+    from PySide6.QtWidgets import QMainWindow
 
 
-def create_window() -> QMainWindow:
+def create_window() -> 'QMainWindow':
+    # MainWindow applies UiPreferences (saved language/theme) after UI creation.
     from app.ui.main_window import MainWindow
-    window = MainWindow()
-    return window
+    return MainWindow()
 
 
 def main() -> int:
-    if configure_logging is not None:
-        configure_logging(include_app=True)
-    application = QApplication(sys.argv)
+    enable_crash_logging()
+    from app.core.runtime_env import configure_native_environment
+    configure_native_environment()
+    if sys.platform == 'win32':
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('Clivo.App')
+    # configure_logging imports QtCore to record the Qt version; isolation is ready.
+    configure_logging(include_app=True)
+    from PySide6.QtWidgets import QApplication
     from app.ui.branding import APP_NAME, get_app_icon
+    application = QApplication(sys.argv)
     application.setApplicationName(APP_NAME)
     application.setApplicationDisplayName(APP_NAME)
     icon = get_app_icon()

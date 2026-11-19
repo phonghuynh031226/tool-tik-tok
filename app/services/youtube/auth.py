@@ -1,12 +1,15 @@
 """Desktop OAuth, PKCE and SecretStore-only credentials. No file copies/tokens."""
 
 import json
+import hashlib
 from pathlib import Path
+from threading import RLock
 
 from google.auth.transport.requests import Request
 from google.auth.exceptions import RefreshError, TransportError
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
+from requests import Session
 from requests.exceptions import ConnectionError, Timeout
 
 from app.errors import AuthExpired, NetworkError
@@ -16,6 +19,22 @@ from .validators import invalid
 SCOPES = ('https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.readonly')
 CLIENT_KEY = 'youtube.oauth.client'
 TOKEN_KEY = 'youtube.oauth.tokens'
+CONNECT_TIMEOUT = 10
+READ_TIMEOUT = 30
+_LOCKS_GUARD = RLock()
+_REFRESH_LOCKS = {}
+
+
+def credential_lock(credentials):
+    """Process-local gate shared by all copies of the same OAuth grant.
+
+    Only the digest is used as a lock key; never log the grant or lock key.
+    Separate service instances must not refresh the same grant concurrently.
+    """
+    identity = str(credentials.client_id) + '\0' + str(credentials.refresh_token)
+    key = hashlib.sha256(identity.encode()).digest()
+    with _LOCKS_GUARD:
+        return _REFRESH_LOCKS.setdefault(key, RLock())
 
 
 def account_token_key(channel_id: str) -> str:
@@ -107,13 +126,14 @@ def authorize(secret_store):
     stored = secret_store.get(CLIENT_KEY)
     if not stored:
         raise invalid('Hãy chọn client_secret.json OAuth Desktop trước khi kết nối YouTube.')
+    flow = None
     try:
         config = _client_config(json.loads(stored))
         with quiet_sdk():
             flow = InstalledAppFlow.from_client_config(config, scopes=SCOPES, autogenerate_code_verifier=True)
             original_request = flow.oauth2session.request
             def bounded_request(*args, **kwargs):
-                return original_request(*args, **(kwargs | {'timeout': 30}))
+                return original_request(*args, **(kwargs | {'timeout': (CONNECT_TIMEOUT, READ_TIMEOUT)}))
             flow.oauth2session.request = bounded_request
             credentials = flow.run_local_server(host='127.0.0.1', bind_addr='127.0.0.1', port=0,
                 open_browser=True, timeout_seconds=180, authorization_prompt_message='',
@@ -121,15 +141,38 @@ def authorize(secret_store):
                 access_type='offline', prompt='select_account consent')
     except Exception as error:
         raise oauth_error(error) from None
+    finally:
+        if flow is not None:
+            with quiet_sdk():
+                flow.oauth2session.close()
     save_credentials(credentials, secret_store)
     return credentials
 
 
-def refresh_credentials(credentials, secret_store) -> None:
+def refresh_credentials(credentials, secret_store) -> Credentials:
+    """Single-flight refresh; return the newest credential snapshot to the owner.
+
+    A waiter adopts a valid token persisted by the preceding refresher. A 401
+    still forces refresh when the persisted snapshot is unchanged.
+    """
+    before = credentials.to_json()
+    with credential_lock(credentials):
+        try:
+            latest = load_credentials(secret_store)
+        except AuthExpired:
+            latest = None
+        if (latest is not None and latest.valid and not latest.expired
+                and latest.to_json() != before):
+            return latest
+        _refresh_locked(credentials, secret_store)
+        return credentials
+
+
+def _refresh_locked(credentials, secret_store) -> None:
     try:
-        with quiet_sdk():
-            request = Request()
-            credentials.refresh(lambda *args, **kwargs: request(*args, **(kwargs | {'timeout': 30})))
+        with quiet_sdk(), Session() as session:
+            request = Request(session=session)
+            credentials.refresh(lambda *args, **kwargs: request(*args, **(kwargs | {'timeout': (CONNECT_TIMEOUT, READ_TIMEOUT)})))
     except (TransportError, ConnectionError, Timeout, OSError):
         raise NetworkError() from None
     except RefreshError as error:

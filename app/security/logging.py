@@ -3,13 +3,46 @@
 from __future__ import annotations
 
 import logging
+import faulthandler
+import platform
+import ssl
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from threading import RLock
 import traceback
 from collections.abc import Mapping
 
 from app.core.paths import safe_path
 from .redaction import REDACTED, is_sensitive_key, redact_text
+
+
+_crash_log_stream = None
+_crash_log_lock = RLock()
+
+
+def enable_crash_logging(path: Path | None = None) -> None:
+    """Capture native-fault thread stacks, retaining the descriptor for process life.
+
+    Faulthandler emits stack locations, without source contents or frame locals.
+    It writes directly to this descriptor, independently of Python log handlers.
+    """
+    global _crash_log_stream
+    path = safe_path(path if path is not None else Path('logs/crash.log'))
+    with _crash_log_lock:
+        previous = _crash_log_stream
+        if previous is not None and not previous.closed and Path(previous.name) == path:
+            faulthandler.enable(file=previous, all_threads=True)
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        stream = path.open('ab', buffering=0)
+        try:
+            faulthandler.enable(file=stream, all_threads=True)
+        except BaseException:
+            stream.close()
+            raise
+        _crash_log_stream = stream
+        if previous is not None:
+            previous.close()
 
 
 def _safe_log_value(value):
@@ -75,5 +108,7 @@ def configure_logging(path: Path | None = None, *, max_bytes: int = 1024 * 1024,
         app_logger.setLevel(level)
     logger.setLevel(level)
     logger.propagate = False
-    logger.info('Ứng dụng khởi động; logging đã bật.')
+    from PySide6.QtCore import qVersion
+    logger.info('Ứng dụng khởi động; Python %s; %s; Qt %s; logging đã bật.',
+                platform.python_version(), ssl.OPENSSL_VERSION, qVersion())
     return logger

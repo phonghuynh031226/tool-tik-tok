@@ -18,7 +18,7 @@ import re
 import socket
 import ssl
 from time import monotonic, sleep
-from threading import RLock
+from threading import RLock, local
 from urllib.parse import urlsplit
 
 import httplib2
@@ -97,7 +97,9 @@ class _Policy:
             raise AuthExpired()
         self.refreshed = True
         try:
-            auth.refresh_credentials(self.owner._credentials, self.owner._secrets)
+            refreshed = auth.refresh_credentials(self.owner._credentials, self.owner._secrets)
+            if refreshed is not None:
+                self.owner._credentials = refreshed
         except AuthExpired:
             self.owner._secrets.delete(auth.TOKEN_KEY)
             self.owner._credentials = None
@@ -124,9 +126,9 @@ class _Policy:
                         self.owner._credentials = None
                         self.owner._confirmation = None
                     raise mapped from None
-            except ssl.SSLError:
+            except ssl.SSLCertVerificationError:
                 raise invalid('Không xác minh được kết nối TLS an toàn với Google.') from None
-            except (ConnectionError, TimeoutError, socket.gaierror, httplib2.HttpLib2Error, RequestsConnectionError, Timeout):
+            except (OSError, httplib2.HttpLib2Error, RequestsConnectionError, Timeout):
                 mapped = NetworkError()
             self.token.raise_if_cancelled()
             if isinstance(mapped, AuthExpired):
@@ -141,11 +143,23 @@ class _Policy:
 class _Transport:
     def __init__(self, owner):
         self.owner = owner
-        self.raw = httplib2.Http(timeout=30)
-        self.raw.follow_redirects = False
-        self.raw.redirect_codes = self.raw.redirect_codes - {308}
+        self._http_local = local()
         self.token = CancelToken()
         self.on_location = None
+
+    @property
+    def raw(self):
+        """A fresh socket client per request, never transferred between threads.
+
+        httplib2's socket timeout covers both connect and read. The logical SDK
+        adapter can be reused under the facade lock; its HTTP sockets cannot.
+        """
+        if not hasattr(self._http_local, 'raw'):
+            http = httplib2.Http(timeout=30)
+            http.follow_redirects = False
+            http.redirect_codes = http.redirect_codes - {308}
+            self._http_local.raw = http
+        return self._http_local.raw
 
     def request(self, uri, method='GET', body=None, headers=None, **kwargs):
         self.token.raise_if_cancelled()
@@ -155,11 +169,20 @@ class _Transport:
         if self.owner._credentials is None:
             raise AuthExpired()
         headers = dict(headers or {})
-        self.owner._credentials.apply(headers)
+        credentials = self.owner._credentials
+        with auth.credential_lock(credentials):
+            credentials.apply(headers)
         # No implicit redirects carrying Authorization to another host.
         kwargs.pop('redirections', None)
-        response, content = self.raw.request(uri, method=method, body=body,
+        http = self.raw
+        try:
+            response, content = http.request(uri, method=method, body=body,
                                              headers=headers, redirections=0, **kwargs)
+        finally:
+            try:
+                http.close()
+            finally:
+                del self._http_local.raw
         location = response.get('location')
         if self.on_location and location and int(response.status) in (200, 201, 308):
             self.on_location(_session_uri(location))  # Persist BEFORE SDK sends media.
@@ -174,6 +197,7 @@ class _YouTubeSession:
         self._transport = None
         self._confirmation = None
         self._on_upload_accepted = None
+        self._verified_channel = None
 
     def import_client_secret(self, selected_path: Path) -> None:
         auth.import_client_secret(selected_path, self._secrets)
@@ -207,6 +231,7 @@ class _YouTubeSession:
         in SecretStore. Network failures retain credentials for a later retry.
         """
         self._confirmation = None
+        self._verified_channel = None
         try:
             self._credentials = auth.load_credentials(self._secrets)
             self._api = None
@@ -239,7 +264,8 @@ class _YouTubeSession:
         if len(items) != 1 or not _CHANNEL_ID.fullmatch(str(items[0].get('id', ''))):
             raise invalid('Không xác định được một kênh YouTube đích hợp lệ cho tài khoản.')
         self.thumbnail_url = items[0].get('snippet', {}).get('thumbnails', {}).get('default', {}).get('url')
-        return ChannelInfo(items[0]['id'], str(items[0].get('snippet', {}).get('title', '')))
+        self._verified_channel = ChannelInfo(items[0]['id'], str(items[0].get('snippet', {}).get('title', '')))
+        return self._verified_channel
 
     def get_channel(self) -> ChannelInfo:
         return self._channel(_Policy(self, CancelToken()))
@@ -534,8 +560,7 @@ class YouTubeService:
         default = self._default_id()
         if default is not None:
             session = self._session_for(default, reload=True)
-            channel = session.get_channel()
-            return self._verify_identity(session, channel, default)
+            return session._verified_channel
         legacy = _YouTubeSession(secret_store=self._secrets)
         channel = legacy.restore_session()
         if channel is None:
@@ -553,8 +578,7 @@ class YouTubeService:
         else:
             try:
                 session = self._session_for(default, reload=True)
-                channel = session.get_channel()
-                return self._verify_identity(session, channel, default)
+                return session._verified_channel
             except AuthExpired:
                 # OAuth may grant a different Brand channel: do not overwrite
                 # the old account's token before Google identifies the channel.
@@ -598,7 +622,7 @@ class YouTubeService:
         for row in self._rows():
             try:
                 session = self._session_for(row['id'], reload=True)
-                channel = self._verify_identity(session, session.get_channel(), row['id'])
+                channel = session._verified_channel  # Already verified by this restore, not a second API read.
                 statuses[channel.id] = 'connected'
             except AuthExpired:
                 statuses[row['id']] = 'expired'

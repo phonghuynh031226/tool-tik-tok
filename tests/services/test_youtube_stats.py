@@ -179,6 +179,9 @@ def test_refresh_rejected_is_auth_expired_without_api_retry(statistics, monkeypa
     youtube, _, api, secrets = statistics
     session = youtube._sessions[A]
     session._credentials.expiry = datetime(2020, 1, 1)
+    # Expire persistence too; a fresh token already saved by another worker is
+    # now correctly adopted without another refresh attempt.
+    auth.save_credentials(session._credentials, session._secrets)
     def rejected(self, request):
         raise RefreshError('invalid_grant private diagnostic')
     monkeypatch.setattr(type(session._credentials), 'refresh', rejected)

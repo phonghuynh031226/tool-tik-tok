@@ -54,9 +54,8 @@ class AccountCardWidget(QFrame):
 
     def _init_ui(self) -> None:
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 8, 16, 8)
-        layout.setSpacing(14)
-        layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setSpacing(12)
 
         # Avatar initial
         self.lbl_avatar = QLabel(self)
@@ -72,28 +71,36 @@ class AccountCardWidget(QFrame):
             f"background-color: {bg_col}; color: #ffffff; border-radius: 20px; "
             f"font-weight: 700; font-size: 16px; border: none;"
         )
-        layout.addWidget(self.lbl_avatar, alignment=Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(self.lbl_avatar)
 
         self._load_avatar()
 
-        # Channel info (title + metrics)
+        # Channel info
         info_col = QVBoxLayout()
-        info_col.setSpacing(3)
+        info_col.setSpacing(2)
         info_col.setContentsMargins(0, 0, 0, 0)
-        info_col.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
-        self.lbl_title = QLabel(self.account.title or "Kênh YouTube", self)
+        title_row = QHBoxLayout()
+        title_row.setSpacing(6)
+        self.lbl_title = QLabel(self.account.title, self)
+        if not self.account.title:
+            _i18n.set_text(self.lbl_title, "Kênh YouTube")
         self.lbl_title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.lbl_title.setMinimumWidth(0)
         self.lbl_title.setTextFormat(Qt.TextFormat.PlainText)
         self.lbl_title.setStyleSheet(f"font-size: 14px; font-weight: 600; color: {tokens.TEXT_PRIMARY}; border: none; background: transparent;")
-        info_col.addWidget(self.lbl_title)
+        title_row.addWidget(self.lbl_title, stretch=1)
+
+        if self.account.is_default:
+            self.badge_def = StatusBadge(status="Mặc định", badge_type="info", parent=self)
+            title_row.addWidget(self.badge_def)
+
+        info_col.addLayout(title_row)
 
         self.lbl_id = QLabel(f"ID: {self.account.id}", self)
         self.lbl_id.setStyleSheet(f"font-size: 11px; color: {tokens.TEXT_MUTED}; border: none; background: transparent;")
         self.lbl_title.setToolTip(f"{self.account.title}\n{self.account.id}")
         self.lbl_id.hide()
-
         self.lbl_metrics = _i18n.ui(QLabel("— đăng ký  ·  — lượt xem  ·  — video", self))
         self.lbl_metrics.setStyleSheet(f"color: {tokens.TEXT_SECONDARY}; font-size: 12px; background: transparent; border: none;")
         self.lbl_metrics.setWordWrap(True)
@@ -102,29 +109,21 @@ class AccountCardWidget(QFrame):
 
         layout.addLayout(info_col, stretch=1)
 
-        # Default badge (nếu là kênh mặc định) - căn giữa hoàn hảo theo chiều dọc cùng cụm trạng thái
-        if self.account.is_default:
-            self.badge_def = StatusBadge(status="Mặc định", badge_type="info", parent=self)
-            self.badge_def.setFixedHeight(24)
-            layout.addWidget(self.badge_def, alignment=Qt.AlignmentFlag.AlignVCenter)
-        else:
-            self.badge_def = None
-
         # Status badge
         badge_type = "success" if self.account.status == "connected" else "danger"
         badge_text = "Đã kết nối" if self.account.status == "connected" else (
             "Hết hạn" if self.account.status == "expired" else "Lỗi"
         )
-        self.status_badge = QLabel("● " + badge_text, self)
+        self.status_badge = _i18n.bind(QLabel(self), badge_text)
         status_color = "#34d399" if self.account.status == "connected" else "#f87171"
         self.status_badge.setStyleSheet(f"color: {status_color}; font-size: 12px; border: none; background: transparent;")
-        layout.addWidget(self.status_badge, alignment=Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(self.status_badge)
 
         self.btn_menu = AppButton("...", variant="ghost", parent=self)
         self.btn_menu.setFixedSize(36, 36)
         self.btn_menu.setStyleSheet("QPushButton::menu-indicator { image: none; width: 0px; }")
         _i18n.tooltip(self.btn_menu, "Thao tác tài khoản")
-        self.btn_menu.setAccessibleName("Thao tác tài khoản")
+        _i18n.bind(self.btn_menu, "Thao tác tài khoản", "accessibleName")
         menu = QMenu(self.btn_menu)
         if not self.account.is_default:
             menu.addAction("Đặt làm mặc định", lambda: self.set_default_requested.emit(self.account))
@@ -132,9 +131,17 @@ class AccountCardWidget(QFrame):
             menu.addAction("Đăng nhập lại", lambda: self.reconnect_requested.emit(self.account))
         menu.addSeparator()
         menu.addAction("Xóa tài khoản", lambda: self.remove_requested.emit(self.account))
+        def translate_menu():
+            for action in menu.actions():
+                source = action.property('ui_source')
+                if source is None:
+                    source = action.text()
+                    action.setProperty('ui_source', source)
+                action.setText(_i18n.translate(source, _i18n.language_for(self)))
+        menu.aboutToShow.connect(translate_menu)
         self.btn_menu.setMenu(menu)
-        layout.addWidget(self.btn_menu, alignment=Qt.AlignmentFlag.AlignVCenter)
-        self.setFixedHeight(72)
+        layout.addWidget(self.btn_menu)
+        self.setFixedHeight(84)
 
     def _load_avatar(self) -> None:
         url = QUrl(self.account.thumbnail_url or "")
@@ -175,9 +182,9 @@ class AccountCardWidget(QFrame):
         self.lbl_avatar.setPixmap(rounded)
 
     def set_stats(self, stats: ChannelStats) -> None:
-        subscribers = "Ẩn" if stats.subscribers_hidden else (
+        subscribers = _i18n.translate("Ẩn", _i18n.language_for(self)) if stats.subscribers_hidden else (
             f"{stats.subscribers:,}" if stats.subscribers is not None else "—")
-        _i18n.format_text(self.lbl_metrics, '{0} đăng ký  ·  {1} lượt xem  ·  {2} video', f'{subscribers}', f'{stats.total_views:,}', f'{stats.video_count:,}')
+        _i18n.format_text(self.lbl_metrics, '{0} đăng ký  ·  {1} lượt xem  ·  {2} video', subscribers, f'{stats.total_views:,}', f'{stats.video_count:,}')
         _i18n.tooltip(self.lbl_metrics, "Số người đăng ký có thể được YouTube làm tròn.")
 
     def resizeEvent(self, event) -> None:
@@ -225,10 +232,18 @@ class YouTubeChannelsPage(QWidget):
         self.services.add_mode_banner(self)
         self._load_accounts()
 
+    def _bind_empty_copy(self, widget):
+        for label in widget.findChildren(QLabel):
+            if label.text():
+                _i18n.bind(label, label.text())
+
+    def _tr(self, text):
+        return _i18n.translate(text, _i18n.language_for(self))
+
     def _notify(self, ntype: str, title: str, message: str) -> None:
         toast = ToastManager.instance()
         if toast:
-            getattr(toast, ntype, toast.info)(title, message)
+            getattr(toast, ntype, toast.info)(self._tr(title), self._tr(message))
 
     def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -343,6 +358,7 @@ class YouTubeChannelsPage(QWidget):
             description="Kênh YouTube này chưa có video đã đăng tải hoặc đang tải danh sách.",
             parent=self.card_videos,
         )
+        self._bind_empty_copy(self.empty_videos)
         self.empty_videos.setVisible(False)
         v_layout.addWidget(self.empty_videos, stretch=1)
 
@@ -404,13 +420,14 @@ class YouTubeChannelsPage(QWidget):
                 description="Hãy kết nối tài khoản để bắt đầu quản lý và đăng tải video.",
                 parent=self.card_accounts,
             )
+            self._bind_empty_copy(empty)
             self.accounts_container.addWidget(empty)
             self._card_widgets.append(empty)
             self._selected_account = None
             self._show_channel_details(None)
             return
 
-        self.card_accounts.setFixedHeight(56 + len(acc_list) * 72 + max(0, len(acc_list) - 1) * 8)
+        self.card_accounts.setFixedHeight(70 + len(acc_list) * 84 + max(0, len(acc_list) - 1) * 8)
         # Preserve an explicit selection after account changes; initial view stays unselected.
         selected_id = self._selected_account.id if self._selected_account else None
         self._selected_account = next((a for a in acc_list if a.id == selected_id), None)
@@ -454,8 +471,11 @@ class YouTubeChannelsPage(QWidget):
         self.tbl_videos.setVisible(account is not None)
         self.edit_search.setVisible(account is not None)
         self.lbl_updated_at.setVisible(account is not None)
-        self.lbl_updated_at.setText("Đang tải video…" if account else "")
-        self.lbl_video_heading.setText(f"Video · {account.title}" if account else "Video của kênh")
+        _i18n.set_text(self.lbl_updated_at, "Đang tải video…" if account else "")
+        if account:
+            _i18n.format_text(self.lbl_video_heading, 'Video · {0}', account.title)
+        else:
+            _i18n.set_text(self.lbl_video_heading, 'Video của kênh')
         self.lbl_video_heading.setTextFormat(Qt.TextFormat.PlainText)
 
     def _load_channel_data(self, force_refresh: bool = False) -> None:
@@ -496,8 +516,8 @@ class YouTubeChannelsPage(QWidget):
         self.progress_bar.setVisible(False)
         self._all_videos = videos
         fetched = min((v.fetched_at for v in videos if v.fetched_at is not None), default=None)
-        stamp = fetched.astimezone().strftime("%H:%M:%S %d/%m/%Y") if fetched else 'chưa có thời điểm cập nhật'
-        _i18n.format_text(self.lbl_updated_at, 'Cập nhật: {0}', f'{stamp}')
+        stamp = fetched.astimezone().strftime("%H:%M:%S %d/%m/%Y") if fetched else self._tr('chưa có thời điểm cập nhật')
+        _i18n.format_text(self.lbl_updated_at, 'Cập nhật: {0}', stamp)
         self._render_videos(videos)
 
     @Slot(str, object)
@@ -525,7 +545,7 @@ class YouTubeChannelsPage(QWidget):
             self.tbl_videos.setItem(row, 2, QTableWidgetItem(date_str))
 
             privacy_map = {"public": "Công khai", "private": "Riêng tư", "unlisted": "Không công khai"}
-            self.tbl_videos.setItem(row, 3, QTableWidgetItem(privacy_map.get(v.privacy_status, v.privacy_status)))
+            self.tbl_videos.setItem(row, 3, QTableWidgetItem(self._tr(privacy_map.get(v.privacy_status, v.privacy_status))))
 
             self.tbl_videos.setItem(row, 4, QTableWidgetItem(f"{v.views:,}"))
             likes_str = f"{v.likes:,}" if v.likes is not None else "—"
@@ -559,7 +579,7 @@ class YouTubeChannelsPage(QWidget):
     @Slot(object)
     def _on_account_added(self, account: ChannelAccount) -> None:
         self.progress_bar.setVisible(False)
-        self._notify("success", "Thêm tài khoản thành công", f"Đã kết nối tài khoản: {account.title}")
+        self._notify("success", "Thêm tài khoản thành công", self._tr("Đã kết nối tài khoản: {0}").format(account.title))
         self._load_accounts()
 
     @Slot()
@@ -598,10 +618,10 @@ class YouTubeChannelsPage(QWidget):
 
     def _on_remove_account_for_account(self, account: ChannelAccount) -> None:
         dialog = ConfirmDialog(
-            title="Xác nhận xóa tài khoản",
-            message=f"Bạn có chắc chắn muốn ngắt kết nối và xóa tài khoản '{account.title}' không?",
-            confirm_text="Xóa tài khoản",
-            cancel_text="Hủy",
+            title=self._tr("Xác nhận xóa tài khoản"),
+            message=self._tr("Bạn có chắc chắn muốn ngắt kết nối và xóa tài khoản '{0}' không?").format(account.title),
+            confirm_text=self._tr("Xóa tài khoản"),
+            cancel_text=self._tr("Hủy"),
             is_danger=True,
             icon_name="delete",
             parent=self,
