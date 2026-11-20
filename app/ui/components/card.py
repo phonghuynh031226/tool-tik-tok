@@ -6,7 +6,7 @@ from typing import Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget,
+    QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from app.ui import icons, tokens
@@ -68,7 +68,8 @@ class Card(QFrame):
                 if subtitle:
                     sub_label = _i18n.bind(QLabel(subtitle), subtitle)
                     sub_label.setProperty("class", "stepDesc")
-                    sub_label.setWordWrap(False)
+                    sub_label.setWordWrap(True)
+                    sub_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
                     title_box.addWidget(sub_label)
 
                 header_layout.addLayout(title_box, 1)

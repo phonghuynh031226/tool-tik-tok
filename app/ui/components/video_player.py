@@ -11,7 +11,7 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QPushButton, QSlider, QStackedLayout, QVBoxLayout,
+    QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSlider, QStackedLayout, QVBoxLayout,
     QWidget,
 )
 
@@ -36,8 +36,11 @@ class VideoPlayerWidget(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(8)
 
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+
         # Video / Placeholder / Thumbnail Stack
         self.screen_container = QWidget(self)
+        self.screen_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.screen_container.setMinimumHeight(200)
         self.screen_container.setMaximumHeight(320)
         self.video_widget.setMaximumHeight(320)
@@ -47,6 +50,8 @@ class VideoPlayerWidget(QWidget):
         self.placeholder = _i18n.ui(QLabel("Chưa có video\n(Dán liên kết TikTok và bấm 'Tải video' để xem trước)", self))
         self.placeholder.setObjectName("videoPlaceholder")
         self.placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.placeholder.setWordWrap(True)
+        self.placeholder.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.stack_layout.addWidget(self.placeholder)
 
         # Thumbnail view (if available before playback)

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import traceback
+import weakref
 from typing import Any, Callable, Generic, TypeVar
 
 from PySide6.QtCore import QObject, QRunnable, Signal, Slot
@@ -17,6 +18,26 @@ from app.core.cancel import CancelToken
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
+
+_ACTIVE_WORKERS: weakref.WeakSet = weakref.WeakSet()
+
+
+def register_worker(worker: Any) -> None:
+    """Track worker instance for cooperative teardown and test isolation."""
+    try:
+        _ACTIVE_WORKERS.add(worker)
+    except Exception:
+        pass
+
+
+def cancel_all_workers() -> None:
+    """Cancel all active cooperatively cancellable workers."""
+    for worker in list(_ACTIVE_WORKERS):
+        if hasattr(worker, "cancel") and callable(worker.cancel):
+            try:
+                worker.cancel()
+            except Exception:
+                pass
 
 
 class WorkerSignals(QObject):
@@ -59,6 +80,7 @@ class TaskWorker(QRunnable, Generic[T]):
         self.signals = WorkerSignals()
         self.cancel_token = CancelToken()
         self.setAutoDelete(True)
+        register_worker(self)
 
     def cancel(self) -> None:
         """Request cooperative cancellation."""

@@ -364,27 +364,33 @@ class DashboardPage(QWidget):
         s2_layout = QVBoxLayout()
         s2_layout.setSpacing(10)
 
-        # AI Model & Action Row: đưa toàn bộ lên cùng 1 hàng duy nhất
-        ai_row = QHBoxLayout()
-        ai_row.setSpacing(8)
+        # AI Model Row
+        ai_row1 = QHBoxLayout()
+        ai_row1.setSpacing(8)
 
         lbl_model = _i18n.ui(QLabel("Mô hình AI:", self.step2_card))
         lbl_model.setProperty("class", "fieldLabel")
-        ai_row.addWidget(lbl_model)
+        ai_row1.addWidget(lbl_model)
 
         self.combo_model = QComboBox(self.step2_card)
         self._populate_models()
         self.combo_model.currentIndexChanged.connect(self._on_model_combo_changed)
-        ai_row.addWidget(self.combo_model, stretch=1)
+        ai_row1.addWidget(self.combo_model, stretch=1)
+        s2_layout.addLayout(ai_row1)
+
+        # AI Action Buttons Row
+        ai_row2 = QHBoxLayout()
+        ai_row2.setSpacing(8)
 
         self.btn_generate_ai = _i18n.ui(AppButton("Tạo nội dung AI", variant="primary", icon_name="creation", parent=self.step2_card))
         self.btn_generate_ai.clicked.connect(self._on_generate_clicked)
-        ai_row.addWidget(self.btn_generate_ai)
+        ai_row2.addWidget(self.btn_generate_ai)
 
         self.btn_restore_original = _i18n.ui(AppButton("Khôi phục gốc", variant="secondary", icon_name="history", parent=self.step2_card))
         self.btn_restore_original.clicked.connect(self._on_restore_original_clicked)
-        ai_row.addWidget(self.btn_restore_original)
-        s2_layout.addLayout(ai_row)
+        ai_row2.addWidget(self.btn_restore_original)
+        ai_row2.addStretch()
+        s2_layout.addLayout(ai_row2)
 
         # Hidden copy shim for backwards test compatibility
         self.btn_copy_all = QPushButton(self.step2_card)
@@ -473,11 +479,11 @@ class DashboardPage(QWidget):
         s3_layout.setSpacing(12)
 
         # Bố trí 2 cột bên trong Step 3 để khi trải rộng ngang các thành phần cân đối
-        s3_cols = QHBoxLayout()
-        s3_cols.setSpacing(24)
+        self.s3_grid = QGridLayout()
+        self.s3_grid.setSpacing(24)
 
-        s3_left = QVBoxLayout()
-        s3_left.setSpacing(10)
+        self.s3_left = QVBoxLayout()
+        self.s3_left.setSpacing(10)
 
         # Channel Selector section (Dropdown list theo yêu cầu)
         ch_header = QHBoxLayout()
@@ -491,13 +497,13 @@ class DashboardPage(QWidget):
         self.btn_add_channel.clicked.connect(self._navigate_to_youtube_channels)
         self.btn_add_channel.setVisible(False)
         ch_header.addWidget(self.btn_add_channel)
-        s3_left.addLayout(ch_header)
+        self.s3_left.addLayout(ch_header)
 
         # Dropdown list chọn kênh (tự động chọn kênh mặc định)
         self.combo_channel = QComboBox(self.step3_card)
         self.combo_channel.setMinimumHeight(tokens.HEIGHT_INPUT_MD)
         self.combo_channel.currentIndexChanged.connect(self._on_channel_combo_changed)
-        s3_left.addWidget(self.combo_channel)
+        self.s3_left.addWidget(self.combo_channel)
 
         # Channels list area (Ẩn danh sách card, dùng combo_channel gọn gàng)
         self.channels_container = QWidget(self.step3_card)
@@ -505,7 +511,7 @@ class DashboardPage(QWidget):
         self.channels_cards_layout.setContentsMargins(0, 0, 0, 0)
         self.channels_cards_layout.setSpacing(6)
         self.channels_container.setVisible(False)
-        s3_left.addWidget(self.channels_container)
+        self.s3_left.addWidget(self.channels_container)
 
         self.lbl_channel_indicator = QLabel(self.step3_card)
         self.lbl_channel_indicator.setVisible(False)
@@ -519,14 +525,15 @@ class DashboardPage(QWidget):
         self.btn_reconnect_channel = _i18n.ui(AppButton("Đăng nhập lại", variant="secondary", parent=self.step3_card))
         self.btn_reconnect_channel.setVisible(False)
         self.btn_reconnect_channel.clicked.connect(self._on_reconnect_channel_clicked)
-        s3_left.addWidget(self.btn_reconnect_channel)
+        self.s3_left.addWidget(self.btn_reconnect_channel)
 
         # Timing Mode: Publish Now vs Scheduled
-        timing_row = QHBoxLayout()
         lbl_timing = _i18n.ui(QLabel("Thời điểm xuất bản:", self.step3_card))
         lbl_timing.setProperty("class", "fieldLabel")
-        timing_row.addWidget(lbl_timing)
+        self.s3_left.addWidget(lbl_timing)
 
+        timing_row = QHBoxLayout()
+        timing_row.setSpacing(12)
         self.radio_publish_now = _i18n.ui(QRadioButton("Đăng ngay", self.step3_card))
         self.radio_publish_now.setChecked(True)
         self.radio_publish_schedule = _i18n.ui(QRadioButton("Hẹn giờ công khai", self.step3_card))
@@ -539,13 +546,13 @@ class DashboardPage(QWidget):
         timing_row.addWidget(self.radio_publish_now)
         timing_row.addWidget(self.radio_publish_schedule)
         timing_row.addStretch()
-        s3_left.addLayout(timing_row)
+        self.s3_left.addLayout(timing_row)
 
         # Custom Schedule Picker Component
         self.schedule_picker = SchedulePickerWidget(self.step3_card)
         self.schedule_picker.setVisible(False)
         self.schedule_picker.datetime_changed.connect(self._on_schedule_picker_changed)
-        s3_left.addWidget(self.schedule_picker)
+        self.s3_left.addWidget(self.schedule_picker)
 
         # Compatibility adapters for legacy tests
         self.schedule_container = self.schedule_picker
@@ -555,11 +562,11 @@ class DashboardPage(QWidget):
         self.dt_publish.dateTimeChanged.connect(self._on_legacy_dt_changed)
         self.lbl_schedule_error = self.schedule_picker.lbl_summary
         self.lbl_timezone = self.schedule_picker.lbl_timezone
-        s3_left.addStretch()
+        self.s3_left.addStretch()
 
         # Cột phải Step 3: Privacy, Trẻ em, và Nút Đăng
-        s3_right = QVBoxLayout()
-        s3_right.setSpacing(10)
+        self.s3_right = QVBoxLayout()
+        self.s3_right.setSpacing(10)
 
         # Privacy and Made for Kids Form
         form_layout = QVBoxLayout()
@@ -570,6 +577,9 @@ class DashboardPage(QWidget):
         form_layout.addWidget(lbl_privacy)
 
         self.combo_privacy = QComboBox(self.step3_card)
+        self.combo_privacy.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.combo_privacy.setMinimumContentsLength(10)
+        self.combo_privacy.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         _i18n.add_item(self.combo_privacy, "Riêng tư (Private) - Mặc định an toàn", "private")
         _i18n.add_item(self.combo_privacy, "Không công khai (Unlisted)", "unlisted")
         _i18n.add_item(self.combo_privacy, "Công khai (Public)", "public")
@@ -603,7 +613,7 @@ class DashboardPage(QWidget):
         kids_btn_box.addStretch()
         form_layout.addLayout(kids_btn_box)
 
-        s3_right.addLayout(form_layout)
+        self.s3_right.addLayout(form_layout)
 
         # Checkbox: "Tôi xác nhận có quyền sử dụng video này"
         self.chk_rights = _i18n.ui(QCheckBox(
@@ -612,7 +622,7 @@ class DashboardPage(QWidget):
         ))
         self.chk_rights.setStyleSheet("font-weight: 600; color: #f8fafc;")
         self.chk_rights.toggled.connect(self._on_rights_changed)
-        s3_right.addWidget(self.chk_rights)
+        self.s3_right.addWidget(self.chk_rights)
 
         lbl_rights_hint = _i18n.ui(QLabel(
             "Chịu hoàn toàn trách nhiệm về bản quyền và quyền phân phối nội dung.",
@@ -620,7 +630,7 @@ class DashboardPage(QWidget):
         ))
         lbl_rights_hint.setWordWrap(True)
         lbl_rights_hint.setStyleSheet("color: #94a3b8; font-size: 11px; margin-left: 20px;")
-        s3_right.addWidget(lbl_rights_hint)
+        self.s3_right.addWidget(lbl_rights_hint)
 
         import sys
         if "pytest" not in sys.modules:
@@ -655,14 +665,14 @@ class DashboardPage(QWidget):
         self.btn_cancel_upload.clicked.connect(self._on_cancel_upload)
         upload_action_row.addWidget(self.btn_cancel_upload)
 
-        s3_right.addLayout(upload_action_row)
+        self.s3_right.addLayout(upload_action_row)
 
         # Upload Progress Bar
         self.progress_upload = QProgressBar(self.step3_card)
         self.progress_upload.setRange(0, 100)
         self.progress_upload.setValue(0)
         self.progress_upload.setVisible(False)
-        s3_right.addWidget(self.progress_upload)
+        self.s3_right.addWidget(self.progress_upload)
 
         # Upload Result Box
         self.upload_result_box = QFrame(self.step3_card)
@@ -700,12 +710,10 @@ class DashboardPage(QWidget):
         res_btn_row.addStretch()
 
         res_layout.addLayout(res_btn_row)
-        s3_right.addWidget(self.upload_result_box)
-        s3_right.addStretch()
+        self.s3_right.addWidget(self.upload_result_box)
+        self.s3_right.addStretch()
 
-        s3_cols.addLayout(s3_left, stretch=1)
-        s3_cols.addLayout(s3_right, stretch=1)
-        s3_layout.addLayout(s3_cols)
+        s3_layout.addLayout(self.s3_grid)
 
         self.step3_card.add_layout(s3_layout)
 
@@ -752,6 +760,20 @@ class DashboardPage(QWidget):
         self.steps_grid.removeWidget(self.step1_card)
         self.steps_grid.removeWidget(self.step2_card)
         self.steps_grid.removeWidget(self.step3_card)
+
+        if hasattr(self, "s3_grid") and hasattr(self, "s3_left") and hasattr(self, "s3_right"):
+            self.s3_grid.removeItem(self.s3_left)
+            self.s3_grid.removeItem(self.s3_right)
+            if is_wide:
+                self.s3_grid.addLayout(self.s3_left, 0, 0)
+                self.s3_grid.addLayout(self.s3_right, 0, 1)
+                self.s3_grid.setColumnStretch(0, 1)
+                self.s3_grid.setColumnStretch(1, 1)
+            else:
+                self.s3_grid.addLayout(self.s3_left, 0, 0)
+                self.s3_grid.addLayout(self.s3_right, 1, 0)
+                self.s3_grid.setColumnStretch(0, 1)
+                self.s3_grid.setColumnStretch(1, 0)
 
         if is_wide:
             # 2 columns: Top = Step 1 Video (col 0) & Step 2 AI (col 1) tự động cân bằng chiều cao; Bottom = Step 3 YouTube (span cols 0 & 1)

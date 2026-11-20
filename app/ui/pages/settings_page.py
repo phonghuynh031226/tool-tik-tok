@@ -12,7 +12,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout,
     QLabel, QLineEdit, QMessageBox, QProgressBar, QPushButton, QScrollArea,
-    QTextEdit, QVBoxLayout, QWidget,
+    QSizePolicy, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from app.ui import i18n as _i18n
@@ -87,6 +87,8 @@ class SettingsPage(QWidget):
         g_layout.addWidget(lbl_lang, 0, 0)
 
         self.combo_lang = QComboBox(gen_card)
+        self.combo_lang.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.combo_lang.setMinimumWidth(80)
         _i18n.add_item(self.combo_lang, "Tiếng Việt (Mặc định)", "vi")
         self.combo_lang.addItem("English", "en")
         self.combo_lang.currentIndexChanged.connect(
@@ -100,6 +102,8 @@ class SettingsPage(QWidget):
         g_layout.addWidget(lbl_theme, 0, 1)
 
         self.combo_theme = QComboBox(gen_card)
+        self.combo_theme.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.combo_theme.setMinimumWidth(80)
         _i18n.add_item(self.combo_theme, "Dark Mode (Tối chuyên nghiệp - Mặc định)", "dark")
         _i18n.add_item(self.combo_theme, "Light Mode (Sáng)", "light")
         self.combo_theme.currentIndexChanged.connect(
@@ -131,6 +135,8 @@ class SettingsPage(QWidget):
         g_layout.addWidget(lbl_def_priv, 4, 0)
 
         self.combo_def_privacy = QComboBox(gen_card)
+        self.combo_def_privacy.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.combo_def_privacy.setMinimumWidth(80)
         _i18n.add_item(self.combo_def_privacy, "Riêng tư (Private) - Khuyên dùng an toàn", "private")
         _i18n.add_item(self.combo_def_privacy, "Không công khai (Unlisted)", "unlisted")
         _i18n.add_item(self.combo_def_privacy, "Công khai (Public)", "public")
@@ -143,6 +149,8 @@ class SettingsPage(QWidget):
         g_layout.addWidget(lbl_def_kids, 4, 1)
 
         self.combo_def_made_for_kids = QComboBox(gen_card)
+        self.combo_def_made_for_kids.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.combo_def_made_for_kids.setMinimumWidth(80)
         _i18n.add_item(self.combo_def_made_for_kids, "Không chọn trước (Bắt buộc chọn mỗi lần)", "")
         _i18n.add_item(self.combo_def_made_for_kids, "Không, không dành cho trẻ em (Khuyên dùng)", "no")
         _i18n.add_item(self.combo_def_made_for_kids, "Có, dành cho trẻ em", "yes")

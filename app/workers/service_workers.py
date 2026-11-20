@@ -16,7 +16,7 @@ from app.contracts import (
     YouTubeService,
 )
 from app.core.cancel import CancelToken
-from app.workers.base import WorkerSignals
+from app.workers.base import WorkerSignals, register_worker
 from app.workers.youtube_restore import fetch_accounts, invalidate_accounts, restored_default
 
 logger = logging.getLogger('TikTokYouTubeStudio.events')
@@ -63,6 +63,7 @@ class FetchMetaWorker(QRunnable):
         self.signals = WorkerSignals()
         self.cancel_token = CancelToken()
         self.setAutoDelete(True)
+        register_worker(self)
 
     def cancel(self) -> None:
         self.cancel_token.cancel()
@@ -96,6 +97,7 @@ class DownloadVideoWorker(QRunnable):
         self.signals = WorkerSignals()
         self.cancel_token = CancelToken()
         self.setAutoDelete(True)
+        register_worker(self)
 
     def cancel(self) -> None:
         self.cancel_token.cancel()
@@ -145,6 +147,7 @@ class GenerateContentWorker(QRunnable):
         self.signals = WorkerSignals()
         self.cancel_token = CancelToken()
         self.setAutoDelete(True)
+        register_worker(self)
 
     def cancel(self) -> None:
         self.cancel_token.cancel()
@@ -216,6 +219,7 @@ class UploadYouTubeWorker(QRunnable):
         self.signals = WorkerSignals()
         self.cancel_token = CancelToken()
         self.setAutoDelete(True)
+        register_worker(self)
 
     def cancel(self) -> None:
         self.cancel_token.cancel()
@@ -269,6 +273,7 @@ class YtDlpUpdateWorker(QRunnable):
         self.signals = WorkerSignals()
         self.cancel_token = CancelToken()
         self.setAutoDelete(True)
+        register_worker(self)
 
     def cancel(self) -> None:
         self.cancel_token.cancel()
@@ -316,6 +321,7 @@ class YouTubeConnectWorker(QRunnable):
         self.signals = WorkerSignals()
         self.cancel_token = CancelToken()
         self.setAutoDelete(True)
+        register_worker(self)
 
     def cancel(self) -> None:
         self.cancel_token.cancel()
@@ -347,11 +353,23 @@ class YouTubeRestoreWorker(QRunnable):
         super().__init__()
         self.service = service
         self.signals = WorkerSignals()
+        self.cancel_token = CancelToken()
+        self.setAutoDelete(True)
+        register_worker(self)
+
+    def cancel(self) -> None:
+        self.cancel_token.cancel()
 
     @Slot()
     def run(self):
+        if self.cancel_token.is_cancelled:
+            self.signals.cancelled.emit()
+            return
         try:
-            accounts = fetch_accounts(self.service, consumer='restore')
+            accounts = fetch_accounts(self.service, consumer='restore', token=self.cancel_token)
+            if self.cancel_token.is_cancelled:
+                self.signals.cancelled.emit()
+                return
             if isinstance(accounts, list):
                 self.signals.accounts_loaded.emit(accounts)
             # Empty/legacy test backends retain the old silent path. Production
@@ -377,6 +395,7 @@ class FetchAccountsWorker(QRunnable):
         self.signals = WorkerSignals()
         self.cancel_token = CancelToken()
         self.setAutoDelete(True)
+        register_worker(self)
 
     def cancel(self) -> None:
         self.cancel_token.cancel()
@@ -408,6 +427,7 @@ class AddAccountWorker(QRunnable):
         self.signals = WorkerSignals()
         self.cancel_token = CancelToken()
         self.setAutoDelete(True)
+        register_worker(self)
 
     def cancel(self) -> None:
         self.cancel_token.cancel()
@@ -441,6 +461,7 @@ class RemoveAccountWorker(QRunnable):
         self.signals = WorkerSignals()
         self.cancel_token = CancelToken()
         self.setAutoDelete(True)
+        register_worker(self)
 
     def cancel(self) -> None:
         self.cancel_token.cancel()
@@ -474,6 +495,7 @@ class SetDefaultAccountWorker(QRunnable):
         self.signals = WorkerSignals()
         self.cancel_token = CancelToken()
         self.setAutoDelete(True)
+        register_worker(self)
 
     def cancel(self) -> None:
         self.cancel_token.cancel()
@@ -508,6 +530,7 @@ class FetchChannelStatsWorker(QRunnable):
         self.signals = WorkerSignals()
         self.cancel_token = CancelToken()
         self.setAutoDelete(True)
+        register_worker(self)
 
     def cancel(self) -> None:
         self.cancel_token.cancel()
@@ -548,6 +571,7 @@ class FetchChannelVideosWorker(QRunnable):
         self.signals = WorkerSignals()
         self.cancel_token = CancelToken()
         self.setAutoDelete(True)
+        register_worker(self)
 
     def cancel(self) -> None:
         self.cancel_token.cancel()
@@ -589,6 +613,7 @@ class SyncScheduledWorker(QRunnable):
         self.signals = WorkerSignals()
         self.cancel_token = CancelToken()
         self.setAutoDelete(True)
+        register_worker(self)
 
     def cancel(self) -> None:
         self.cancel_token.cancel()
