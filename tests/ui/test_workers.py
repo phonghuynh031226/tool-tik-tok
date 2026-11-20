@@ -16,8 +16,28 @@ from app.workers import (
 )
 
 
-def test_task_worker_success(qtbot):
-    pool = QThreadPool.globalInstance()
+@pytest.fixture
+def thread_pool():
+    pool = QThreadPool()
+    yield pool
+    pool.clear()
+    pool.waitForDone(2000)
+
+
+def test_task_worker_success(qtbot, thread_pool):
+    import sys, threading, traceback
+    global_pool = QThreadPool.globalInstance()
+    print(f"\n[EVIDENCE] test_task_worker_success start:")
+    print(f"  QThreadPool.globalInstance(): active={global_pool.activeThreadCount()}, max={global_pool.maxThreadCount()}")
+    print(f"  Live threads ({len(threading.enumerate())}): {[t.name for t in threading.enumerate()]}")
+    frames = sys._current_frames()
+    print(f"  Current frames in Python ({len(frames)}):")
+    for tid, frame in list(frames.items())[:10]:
+        stack = traceback.format_stack(frame)
+        top = stack[-1].strip() if stack else "no stack"
+        print(f"    TID {tid}: {top}")
+
+    pool = thread_pool
 
     def sample_task(on_progress, cancel_token):
         on_progress(0.5)
@@ -31,15 +51,15 @@ def test_task_worker_success(qtbot):
     worker.signals.progress.connect(progress_values.append)
     worker.signals.finished.connect(results.append)
 
-    with qtbot.waitSignal(worker.signals.finished, timeout=2000):
-        pool.start(worker)
+    pool.start(worker)
+    qtbot.waitUntil(lambda: len(results) == 1, timeout=2000)
 
     assert results == ["SUCCESS_RESULT"]
     assert 0.5 in progress_values
 
 
-def test_task_worker_error(qtbot):
-    pool = QThreadPool.globalInstance()
+def test_task_worker_error(qtbot, thread_pool):
+    pool = thread_pool
 
     def failing_task(on_progress, cancel_token):
         raise ValueError("Lỗi thử nghiệm cố ý")
@@ -48,15 +68,15 @@ def test_task_worker_error(qtbot):
     errors = []
     worker.signals.error.connect(errors.append)
 
-    with qtbot.waitSignal(worker.signals.error, timeout=2000):
-        pool.start(worker)
+    pool.start(worker)
+    qtbot.waitUntil(lambda: len(errors) == 1, timeout=2000)
 
     assert len(errors) == 1
     assert "Lỗi thử nghiệm cố ý" in errors[0]
 
 
-def test_task_worker_cancellation(qtbot):
-    pool = QThreadPool.globalInstance()
+def test_task_worker_cancellation(qtbot, thread_pool):
+    pool = thread_pool
 
     def slow_task(on_progress, cancel_token):
         for _ in range(100):
@@ -76,8 +96,8 @@ def test_task_worker_cancellation(qtbot):
     assert cancelled_signals == [True]
 
 
-def test_service_workers_with_fakes(qtbot, tmp_path):
-    pool = QThreadPool.globalInstance()
+def test_service_workers_with_fakes(qtbot, thread_pool, tmp_path):
+    pool = thread_pool
     tiktok_service = FakeTikTokService()
     youtube_service = FakeYouTubeService()
     generator = FakeContentGenerator()

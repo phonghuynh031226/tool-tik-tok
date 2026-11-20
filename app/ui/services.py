@@ -109,6 +109,11 @@ class YouTubeConnection(QObject):
         self.changed.emit()
 
     def clear(self):
+        if getattr(self, '_worker', None) and hasattr(self._worker, 'cancel'):
+            try:
+                self._worker.cancel()
+            except Exception:
+                pass
         self._generation += 1
         self.channel = None
         self.accounts = []
