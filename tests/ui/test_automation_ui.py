@@ -50,7 +50,7 @@ def test_dashboard_paste_automatic_mock_pipeline(qtbot,tmp_path):
     pid=services.automation_store.add_prompt('Public','Tự tải, tạo nội dung và đăng công khai, không dành cho trẻ em',AutomationPolicy(privacy='public'))
     window.automation.arm(pid,CHANNEL,rights_confirmed=True,upload_confirmed=True)
     window.page_dashboard.input_url.setText(URL)
-    qtbot.wait(900)
+    assert not window.automation.timer.isActive()
     services.youtube.upload.assert_not_called()
     QGuiApplication.clipboard().setText(URL)
     window.page_dashboard._on_paste_clicked()
@@ -79,7 +79,7 @@ def test_one_active_prompt_and_off_do_not_run(qtbot,tmp_path):
     window.automation.deactivate()
     QGuiApplication.clipboard().setText(URL)
     window.page_dashboard._on_paste_clicked()
-    qtbot.wait(900)
+    assert not window.automation.timer.isActive()
     services.tiktok.fetch_metadata.assert_not_called()
     assert window.page_automation is not None
 
@@ -158,7 +158,7 @@ def test_rearm_cancels_pending_paste(qtbot,tmp_path):
     window.page_dashboard.input_url.setText(URL)
     window.automation.consider_text(URL)
     window.automation.arm(two,CHANNEL,rights_confirmed=True,upload_confirmed=True)
-    qtbot.wait(900)
+    assert not window.automation.timer.isActive()
     services.tiktok.fetch_metadata.assert_not_called()
 
 
@@ -260,6 +260,7 @@ def test_cancelled_metadata_completion_does_not_start_download(qtbot,tmp_path):
 
 def test_real_window_close_revokes_pending_permission(qtbot):
     services=ServiceContainer.create_fake()
+    services.automation_store=AutomationStore(':memory:')  # Caller owns post-close inspection.
     services.connection.set_accounts(services.youtube.list_accounts())
     window=MainWindow(services)
     qtbot.addWidget(window)
@@ -308,7 +309,8 @@ def test_off_during_blocked_ai_unlocks_before_api_returns(qtbot,tmp_path):
         assert window.page_dashboard._active_ai_worker is None
         assert services.automation_store.list_jobs()[0]['status']=='cancelled'
         release.set()
-        qtbot.wait(200)
+        from app.workers.base import background_requests
+        qtbot.waitUntil(lambda: not background_requests(), timeout=200)
         assert window.page_dashboard.state.title != 'Late result'
         services.youtube.upload.assert_not_called()
     finally:
@@ -332,7 +334,8 @@ def test_ai_worker_timeout_does_not_wait_for_api(qtbot):
         assert not release.is_set()
         assert not finished
         release.set()
-        qtbot.wait(200)
+        from app.workers.base import background_requests
+        qtbot.waitUntil(lambda: not background_requests(), timeout=200)
         assert not finished
     finally:
         release.set()

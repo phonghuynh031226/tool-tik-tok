@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import List, Optional, Tuple
 
-from PySide6.QtCore import QSize, Qt, QTimer, Slot
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Slot
+from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtGui import QIcon, QResizeEvent
 from PySide6.QtWidgets import (
     QButtonGroup, QFrame, QHBoxLayout, QLabel, QMainWindow, QPushButton,
@@ -48,6 +49,8 @@ class MainWindow(QMainWindow):
         self._sidebar_collapsed = False
         self._nav_items: List[Tuple[QPushButton, str, str]] = []
 
+        self._closing = False
+        self._resources_closed = False
         self._close_when_automation_idle = False
         self._init_ui()
         self._init_system_tray()
@@ -61,7 +64,7 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _restore_youtube_session(self):
-        if not self.services.is_fake and hasattr(self.services, "connection"):
+        if not self._closing and not self.services.is_fake and hasattr(self.services, "connection"):
             self.services.connection.restore_service(self.services.youtube)
 
     def _init_system_tray(self) -> None:
@@ -182,6 +185,7 @@ class MainWindow(QMainWindow):
         self.page_history = HistoryPage(self.job_state, self.services, self.stack)
         self.page_settings = SettingsPage(self.job_state, self.services, self.stack)
         store = getattr(self.services, 'automation_store', None)
+        self._owns_automation_store = store is None
         if store is None:
             development = type(self.services.settings).__module__ == 'app.services.fakes'
             store = AutomationStore(':memory:' if development else None)
@@ -244,6 +248,10 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, self.close)
 
     def closeEvent(self, event):
+        self._closing = True
+        if self._resources_closed:
+            super().closeEvent(event)
+            return
         if hasattr(self, 'automation') and self.automation.busy:
             self._close_when_automation_idle = True
             self.automation.deactivate()
@@ -251,6 +259,29 @@ class MainWindow(QMainWindow):
             return
         if hasattr(self, "automation"):
             self.automation.deactivate()
+        self.ui_preferences.shutdown()
+        self.services.connection.cancel_pending()
+        # Shared service signals can still arrive after the window is closed.
+        self.services.connection.changed.disconnect(self.page_automation.refresh)
+        self.automation.changed.disconnect(self.page_automation.refresh)
+        # Cancel this window's retained tasks, never the shared thread pool.
+        seen = set()
+        for widget in [self] + self.findChildren(QWidget):
+            for name, worker in list(vars(widget).items()):
+                if name.endswith('_worker') and worker is not None and id(worker) not in seen:
+                    seen.add(id(worker))
+                    cancel = getattr(worker, 'cancel', None)
+                    if callable(cancel):
+                        cancel()
+        for player in self.findChildren(QMediaPlayer):
+            player.stop()
+            player.setSource(QUrl())
+        for timer in self.findChildren(QTimer):
+            timer.stop()
+        self.tray_icon.hide()
+        if self._owns_automation_store:
+            self.automation.store.close()
+        self._resources_closed = True
         super().closeEvent(event)
 
     def _create_nav_button(self, icon_name: str, label_text: str, page_index: int) -> QPushButton:

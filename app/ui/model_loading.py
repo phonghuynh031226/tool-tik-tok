@@ -4,6 +4,8 @@ from PySide6.QtCore import QObject, QRunnable, QSignalBlocker, QThreadPool, Sign
 from PySide6.QtWidgets import QMessageBox
 
 from app.services.gemini import select_preferred_model
+from app.core.cancel import CancelToken
+from app.workers.base import register_worker, tracked_run
 
 
 class _ModelSignals(QObject):
@@ -15,13 +17,23 @@ class _ModelWorker(QRunnable):
         super().__init__()
         self.generator = generator
         self.signals = _ModelSignals()
+        self.cancel_token = CancelToken()
+        register_worker(self)
 
+    def cancel(self):
+        self.cancel_token.cancel()
+
+    @Slot()
+    @tracked_run
     def run(self):
+        if self.cancel_token.is_cancelled:
+            return
         try:
             models = self.generator.list_models()
         except Exception:
             models = ["gemini-2.0-flash", "gemini-1.5-pro"]
-        self.signals.loaded.emit(models)
+        if not self.cancel_token.is_cancelled:
+            self.signals.loaded.emit(models)
 
 
 class _ModelLoader(QObject):

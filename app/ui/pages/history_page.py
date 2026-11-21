@@ -82,7 +82,8 @@ class HistoryPage(QWidget):
         # Timer to update countdown every 5 seconds
         self._countdown_timer = QTimer(self)
         self._countdown_timer.timeout.connect(self._update_countdowns)
-        self._countdown_timer.start(5000)
+        if self.services.run_automatic_background:
+            self._countdown_timer.start(5000)
         self._schedule_poll_timer = QTimer(self)
         self._schedule_poll_timer.setInterval(60000)
         self._schedule_poll_timer.timeout.connect(self._maybe_sync_scheduled)
@@ -90,8 +91,9 @@ class HistoryPage(QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         self.refresh_history()
-        self._schedule_poll_timer.start()
-        QTimer.singleShot(0, self._maybe_sync_scheduled)
+        if self.services.run_automatic_background:
+            self._schedule_poll_timer.start()
+            QTimer.singleShot(0, self._maybe_sync_scheduled)
 
     def hideEvent(self, event):
         self._schedule_poll_timer.stop()

@@ -163,7 +163,8 @@ def test_generate_valid_structured_json(sample_meta):
     assert result.tags == ["video", "huong dan"]
 
 
-def test_generate_malformed_json_retries_and_raises(sample_meta):
+@patch("time.sleep")
+def test_generate_malformed_json_retries_and_raises(mock_sleep, sample_meta):
     mock_client = MagicMock()
     bad_response = MagicMock()
     bad_response.text = "NOT_A_JSON_STRING"
@@ -182,7 +183,8 @@ def test_generate_malformed_json_retries_and_raises(sample_meta):
     assert mock_client.models.generate_content.call_count == 3
 
 
-def test_generate_rate_limit_raises_quota_exceeded(sample_meta):
+@patch("time.sleep")
+def test_generate_rate_limit_raises_quota_exceeded(mock_sleep, sample_meta):
     mock_client = MagicMock()
     err_429 = errors.APIError(429, {"error": {"message": "Resource exhausted"}})
     mock_client.models.generate_content.side_effect = err_429
@@ -406,9 +408,13 @@ def test_generate_timeout_60s(sample_meta):
     """Test that timeout (e.g. 60s) raises NetworkError with timeout message."""
     mock_client = MagicMock()
 
-    import time
+    from threading import Event, current_thread
+    release = Event()
+    requests = []
+
     def slow_generate(*args, **kwargs):
-        time.sleep(0.5)
+        requests.append(current_thread())
+        release.wait()
         return MagicMock()
 
     mock_client.models.generate_content.side_effect = slow_generate
@@ -418,9 +424,15 @@ def test_generate_timeout_60s(sample_meta):
         client_factory=lambda _: mock_client,
     )
 
-    with pytest.raises(NetworkError) as exc:
-        # Pass a small timeout for fast unit testing
-        generator.generate(sample_meta, settings={"timeout": 0.1})
+    try:
+        with pytest.raises(NetworkError) as exc:
+            # Pass a small timeout for fast unit testing
+            generator.generate(sample_meta, settings={"timeout": 0.1})
+    finally:
+        release.set()
+        for request in requests:
+            request.join(timeout=0.5)
+            assert not request.is_alive()
 
     msg = str(exc.value)
     assert "timeout" in msg.lower() or "quá thời gian" in msg.lower()

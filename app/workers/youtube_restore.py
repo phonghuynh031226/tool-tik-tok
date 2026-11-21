@@ -29,6 +29,8 @@ class _Snapshot:
 
     def get(self, service, consumer, token=None):
         with self.condition:
+            if token is not None:
+                token.raise_if_cancelled()
             waited = False
             while self.running:
                 waited = True
@@ -55,6 +57,8 @@ class _Snapshot:
                 self.running = False
                 self.ready = generation == self.generation
                 self.condition.notify_all()
+        if token is not None:
+            token.raise_if_cancelled()
         if error is not None:
             raise error
         return deepcopy(result)

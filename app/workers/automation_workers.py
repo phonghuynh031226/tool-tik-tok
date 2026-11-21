@@ -2,7 +2,7 @@
 from PySide6.QtCore import QRunnable, QObject, Signal, Slot
 from app.core.cancel import CancelToken
 from app.errors import AppError
-from app.workers.base import register_worker
+from app.workers.base import register_worker, tracked_run
 
 class PromptSignals(QObject):
     finished = Signal(object)
@@ -21,6 +21,7 @@ class InterpretPromptWorker(QRunnable):
         self.cancel_token.cancel()
 
     @Slot()
+    @tracked_run
     def run(self):
         if self.cancel_token.is_cancelled:
             return

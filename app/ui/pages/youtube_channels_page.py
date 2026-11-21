@@ -144,6 +144,12 @@ class AccountCardWidget(QFrame):
         self.setFixedHeight(84)
 
     def _load_avatar(self) -> None:
+        owner = self.parent()
+        while owner is not None:
+            services = getattr(owner, 'services', None)
+            if services is not None and not services.run_automatic_background:
+                return
+            owner = owner.parent()
         url = QUrl(self.account.thumbnail_url or "")
         if url.scheme() != "https" or not url.host() or url.userInfo():
             return
@@ -230,7 +236,8 @@ class YouTubeChannelsPage(QWidget):
 
         self._init_ui()
         self.services.add_mode_banner(self)
-        self._load_accounts()
+        if self.services.run_automatic_background:
+            self._load_accounts()
 
     def _bind_empty_copy(self, widget):
         for label in widget.findChildren(QLabel):
@@ -440,10 +447,11 @@ class YouTubeChannelsPage(QWidget):
             card.remove_requested.connect(self._on_remove_account_for_account)
             self.accounts_container.addWidget(card)
             self._card_widgets.append(card)
-            worker = FetchChannelStatsWorker(self.services.youtube, acc.id)
-            worker.signals.finished.connect(self._on_stats_loaded)
-            worker.signals.error.connect(lambda _error, channel_id=acc.id: self._on_row_stats_error(channel_id))
-            self.thread_pool.start(worker)
+            if self.services.run_automatic_background:
+                worker = FetchChannelStatsWorker(self.services.youtube, acc.id)
+                worker.signals.finished.connect(self._on_stats_loaded)
+                worker.signals.error.connect(lambda _error, channel_id=acc.id: self._on_row_stats_error(channel_id))
+                self.thread_pool.start(worker)
 
         self._show_channel_details(self._selected_account)
         self._update_action_bar_state()

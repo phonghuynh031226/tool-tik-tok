@@ -134,6 +134,7 @@ def test_tools_page_ai_standalone(qtbot, test_container):
         assert clip_text == tools.edit_title.text()
 
 
+@pytest.mark.background_tasks
 def test_youtube_channels_page(qtbot, test_container):
     """Test YouTubeChannelsPage: Multi-account list, stats display, video table, and account operations."""
     window = MainWindow(services=test_container)
@@ -222,6 +223,7 @@ def test_settings_simplified_oauth(qtbot, test_container):
     assert settings.btn_browse_secret is not None
 
 
+@pytest.mark.background_tasks
 def test_overview_channel_picker_selection_and_expired(qtbot, test_container):
     """Test destination channel picker populates accounts and handles expired accounts."""
     expired_acc = ChannelAccount("ch-expired", "Kênh Hết Hạn", is_default=False, status="expired")

@@ -47,9 +47,24 @@ class UiPreferences(QObject):
         self.language = 'vi'
         self.theme = 'dark'
         self._refresh_queued = False
+        self._closed = False
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.timeout.connect(self._refresh_children)
         QApplication.instance().installEventFilter(self)
 
+    def shutdown(self):
+        """Detach the global filter even when a closed window remains referenced."""
+        self._closed = True
+        self._refresh_timer.stop()
+        self._refresh_queued = False
+        app = QApplication.instance()
+        if app is not None:
+            app.removeEventFilter(self)
+
     def apply(self):
+        if self._closed:
+            return
         self.language = 'en' if self.settings.get('ui_language', 'vi') == 'en' else 'vi'
         self.theme = 'light' if self.settings.get('ui_theme', 'dark') == 'light' else 'dark'
         qss = light_stylesheet(DARK_THEME_QSS) if self.theme == 'light' else DARK_THEME_QSS
@@ -73,7 +88,7 @@ class UiPreferences(QObject):
         retranslate(widget, self.language)
 
     def eventFilter(self, obj, event):
-        if event.type() in (QEvent.Type.PolishRequest, QEvent.Type.Show, QEvent.Type.StyleChange, QEvent.Type.LayoutRequest) and isinstance(obj, QWidget):
+        if not self._closed and event.type() in (QEvent.Type.PolishRequest, QEvent.Type.Show, QEvent.Type.StyleChange, QEvent.Type.LayoutRequest) and isinstance(obj, QWidget):
             node = obj
             while node is not None and node is not self.window:
                 node = node.parent()
@@ -81,11 +96,11 @@ class UiPreferences(QObject):
                 # Do not retain event widgets: Qt can emit StyleChange while the
                 # derived Python wrapper is still being constructed.
                 self._refresh_queued = True
-                QTimer.singleShot(0, self._refresh_children)
+                self._refresh_timer.start(0)
         return False
 
     def _refresh_children(self):
         self._refresh_queued = False
-        if isValid(self.window):
+        if not self._closed and isValid(self.window):
             for widget in [self.window] + self.window.findChildren(QWidget):
                 self._apply_widget(widget)

@@ -90,7 +90,9 @@ def test_stop_cancels_both_branches_and_discards_late_results(qtbot, tmp_path):
         qtbot.waitUntil(lambda: not window.automation.busy, timeout=2000)
         assert tokens[0].is_cancelled and ai_worker.cancel_token.is_cancelled
         assert window.page_dashboard.input_url.isEnabled()
-        release.set(); qtbot.wait(250)
+        release.set()
+        from app.workers.base import background_requests
+        qtbot.waitUntil(lambda: not background_requests(), timeout=250)
         services.youtube.upload.assert_not_called()
         assert window.job_state.content is None
         assert window.job_state.local_video_path is None

@@ -7,7 +7,7 @@ import os
 import re
 from PySide6.QtCore import QObject, Signal, Slot, QThreadPool
 from PySide6.QtWidgets import QLabel
-from typing import Optional
+from typing import Optional, ClassVar
 
 from app.ui import i18n as _i18n
 from app.contracts import (
@@ -122,6 +122,17 @@ class YouTubeConnection(QObject):
         self.busy = False
         self.changed.emit()
 
+    def cancel_pending(self):
+        """Invalidate queued restore callbacks before the owning window closes."""
+        self._generation += 1
+        worker, self._worker = self._worker, None
+        if worker is not None:
+            cancel = getattr(worker, 'cancel', None)
+            if callable(cancel):
+                cancel()
+        self.busy = False
+        self._upload_owner = None
+
     def restore_service(self, service):
         if self._restore_started or self.busy or self.channel is not None or not callable(getattr(service, 'restore_session', None)):
             return
@@ -155,6 +166,12 @@ class ServiceContainer:
     Allows plugging in either Fake services (dev/test) or Real services (production)
     without modifying any UI widgets or controllers.
     """
+
+    automatic_background_tasks: ClassVar[bool] = True
+
+    @property
+    def run_automatic_background(self):
+        return self.automatic_background_tasks or not self.is_fake
 
     tiktok: TikTokService
     generator: ContentGenerator

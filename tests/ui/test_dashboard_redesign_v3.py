@@ -142,6 +142,7 @@ def test_stepper_3_steps_structure(qtbot, test_container):
 # -----------------------------------------------------------------------------
 # 4. YouTube Channel Selection Radio Cards
 # -----------------------------------------------------------------------------
+@pytest.mark.background_tasks
 def test_channel_radio_cards_selection_and_expired(qtbot, test_container):
     """Visual radio cards for accounts, with default pre-selected and expired dimming."""
     acc_def = ChannelAccount("ch-1", "Kênh Chính", is_default=True, status="connected")

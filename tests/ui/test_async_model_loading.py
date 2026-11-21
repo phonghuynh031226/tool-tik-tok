@@ -12,6 +12,7 @@ from app.ui.model_loading import populate_models
 from app.ui.services import ServiceContainer
 
 
+@pytest.mark.background_tasks
 def test_window_initializes_while_model_catalog_is_waiting(qtbot):
     release = threading.Event()
     calls = []

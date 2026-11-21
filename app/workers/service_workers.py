@@ -16,7 +16,7 @@ from app.contracts import (
     YouTubeService,
 )
 from app.core.cancel import CancelToken
-from app.workers.base import WorkerSignals, register_worker
+from app.workers.base import WorkerSignals, register_worker, tracked_run, start_background_request
 from app.workers.youtube_restore import fetch_accounts, invalidate_accounts, restored_default
 
 logger = logging.getLogger('TikTokYouTubeStudio.events')
@@ -69,6 +69,7 @@ class FetchMetaWorker(QRunnable):
         self.cancel_token.cancel()
 
     @Slot()
+    @tracked_run
     def run(self) -> None:
         if self.cancel_token.is_cancelled:
             self.signals.cancelled.emit()
@@ -106,6 +107,7 @@ class DownloadVideoWorker(QRunnable):
         self.signals.progress.emit(max(0.0, min(1.0, float(p))))
 
     @Slot()
+    @tracked_run
     def run(self) -> None:
         if self.cancel_token.is_cancelled:
             self.signals.cancelled.emit()
@@ -153,6 +155,7 @@ class GenerateContentWorker(QRunnable):
         self.cancel_token.cancel()
 
     @Slot()
+    @tracked_run
     def run(self) -> None:
         import threading
         import time
@@ -175,7 +178,7 @@ class GenerateContentWorker(QRunnable):
                 completed.set()
         self.signals.progress.emit(0.2)
         deadline = time.monotonic() + max(0.001, float(settings.get('timeout', self.timeout)))
-        threading.Thread(target=generate, name='studio-ai-request', daemon=True).start()
+        start_background_request(generate, name='studio-ai-request')
         while not completed.wait(0.05):
             if self.cancel_token.is_cancelled:
                 self.signals.cancelled.emit()
@@ -228,6 +231,7 @@ class UploadYouTubeWorker(QRunnable):
         self.signals.progress.emit(max(0.0, min(1.0, float(p))))
 
     @Slot()
+    @tracked_run
     def run(self) -> None:
         if self.cancel_token.is_cancelled:
             self.signals.cancelled.emit()
@@ -279,6 +283,7 @@ class YtDlpUpdateWorker(QRunnable):
         self.cancel_token.cancel()
 
     @Slot()
+    @tracked_run
     def run(self) -> None:
         if self.cancel_token.is_cancelled:
             self.signals.cancelled.emit()
@@ -327,6 +332,7 @@ class YouTubeConnectWorker(QRunnable):
         self.cancel_token.cancel()
 
     @Slot()
+    @tracked_run
     def run(self) -> None:
         if self.cancel_token.is_cancelled:
             self.signals.cancelled.emit()
@@ -361,6 +367,7 @@ class YouTubeRestoreWorker(QRunnable):
         self.cancel_token.cancel()
 
     @Slot()
+    @tracked_run
     def run(self):
         if self.cancel_token.is_cancelled:
             self.signals.cancelled.emit()
@@ -375,12 +382,18 @@ class YouTubeRestoreWorker(QRunnable):
             # Empty/legacy test backends retain the old silent path. Production
             # list_accounts migrates/restores accounts itself, including legacy.
             channel = restored_default(accounts) if isinstance(accounts, list) and accounts else self.service.restore_session()
+            if self.cancel_token.is_cancelled:
+                self.signals.cancelled.emit()
+                return
             if channel is not None and not isinstance(channel, ChannelInfo):
                 raise ValueError('Invalid restored channel')
             if channel is not None:
                 logger.info('youtube_session_restored — kênh đã xác thực')
             self.signals.finished.emit(channel)
         except Exception as error:
+            if self.cancel_token.is_cancelled:
+                self.signals.cancelled.emit()
+                return
             from app.errors import AppError
             message = error.user_message if isinstance(error, AppError) else 'Không thể kiểm tra phiên YouTube đã lưu. Hãy thử Kết nối kênh.'
             self.signals.error.emit(message)
@@ -401,6 +414,7 @@ class FetchAccountsWorker(QRunnable):
         self.cancel_token.cancel()
 
     @Slot()
+    @tracked_run
     def run(self) -> None:
         if self.cancel_token.is_cancelled:
             self.signals.cancelled.emit()
@@ -433,6 +447,7 @@ class AddAccountWorker(QRunnable):
         self.cancel_token.cancel()
 
     @Slot()
+    @tracked_run
     def run(self) -> None:
         if self.cancel_token.is_cancelled:
             self.signals.cancelled.emit()
@@ -467,6 +482,7 @@ class RemoveAccountWorker(QRunnable):
         self.cancel_token.cancel()
 
     @Slot()
+    @tracked_run
     def run(self) -> None:
         if self.cancel_token.is_cancelled:
             self.signals.cancelled.emit()
@@ -501,6 +517,7 @@ class SetDefaultAccountWorker(QRunnable):
         self.cancel_token.cancel()
 
     @Slot()
+    @tracked_run
     def run(self) -> None:
         if self.cancel_token.is_cancelled:
             self.signals.cancelled.emit()
@@ -536,6 +553,7 @@ class FetchChannelStatsWorker(QRunnable):
         self.cancel_token.cancel()
 
     @Slot()
+    @tracked_run
     def run(self) -> None:
         if self.cancel_token.is_cancelled:
             self.signals.cancelled.emit()
@@ -577,6 +595,7 @@ class FetchChannelVideosWorker(QRunnable):
         self.cancel_token.cancel()
 
     @Slot()
+    @tracked_run
     def run(self) -> None:
         if self.cancel_token.is_cancelled:
             self.signals.cancelled.emit()
@@ -619,6 +638,7 @@ class SyncScheduledWorker(QRunnable):
         self.cancel_token.cancel()
 
     @Slot()
+    @tracked_run
     def run(self) -> None:
         if self.cancel_token.is_cancelled:
             self.signals.cancelled.emit()
