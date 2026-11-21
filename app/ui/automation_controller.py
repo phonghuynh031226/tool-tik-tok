@@ -17,6 +17,8 @@ class AutomationController(QObject):
         self.services, self.page, self.store = services, dashboard, store
         self.armed_prompt_id = None  # Stored selection never grants execution after restart.
         self.channel_id = None
+        from app.ui.batch_queue import BatchRunner
+        self.batch = BatchRunner(self)
         self.job = None
         self.stage = ''
         self.stopping = False
@@ -44,6 +46,8 @@ class AutomationController(QObject):
             getattr(manager, kind)(title, message)
 
     def arm(self, prompt_id, channel_id, *, rights_confirmed=False, upload_confirmed=False):
+        if self.batch.active:
+            raise ValueError('Dừng hàng đợi trước khi đổi prompt hoặc kênh.')
         if self.busy or self.services.connection.busy:
             raise ValueError('Chờ tác vụ/kết nối hiện tại hoàn tất trước khi đổi prompt.')
         if rights_confirmed is not True or upload_confirmed is not True:
@@ -63,6 +67,7 @@ class AutomationController(QObject):
         self.changed.emit()
 
     def deactivate(self):
+        self.batch.abort_local()
         self.armed_prompt_id = None
         self.store.set_active(None)
         self.timer.stop()
@@ -76,7 +81,7 @@ class AutomationController(QObject):
 
     @Slot(str)
     def consider_text(self, text):
-        if not self.armed_prompt_id or self.busy:
+        if self.page.batch_panel.multiple or self.batch.active or not self.armed_prompt_id or self.busy:
             return
         self._text = text.strip()
         self.timer.start()
@@ -105,6 +110,8 @@ class AutomationController(QObject):
             try:
                 self.job = self.store.claim(self.armed_prompt_id, url, self.channel_id)
             except RetryConfirmationRequired as previous:
+                if self.batch.active:
+                    raise ValueError('Video chưa rõ kết quả lần trước; kiểm tra lịch sử trước khi thử lại.')
                 dialog = ConfirmDialog(
                     title='Thử lại video chưa rõ kết quả?',
                     message='Lần trước ứng dụng bị ngắt; trạng thái này không có nghĩa video đã đăng. '
@@ -279,6 +286,12 @@ class AutomationController(QObject):
     def _completed(self, _result):
         if self.busy:
             self.store.finish(self.job['id'])
+            try:
+                for record in self.services.history.list(limit=1000):
+                    if record.get('batch_failure') and record.get('url')==self._text and record.get('channel_id')==self.channel_id:
+                        self.services.history.update(record['id'],dict(retry_resolved=True))
+            except Exception:
+                self._notify('warning','Lịch sử chưa đồng bộ','Video đã đăng; chưa cập nhật được bản ghi lỗi cũ.')
             self._release('Hoàn tất • Sẵn sàng nhận link tiếp theo' if self.armed_prompt_id else 'Tự động hóa đang tắt')
 
     @Slot(str)
@@ -288,10 +301,20 @@ class AutomationController(QObject):
         self._cancel_workers()
         status = 'uncertain' if self.stage == 'uploading' else 'failed'
         self.store.mark_job(self.job['id'], status)
-        self.armed_prompt_id = None
-        self.store.set_active(None)
-        self._release('Đã dừng do lỗi • Kiểm tra tác vụ trước khi bật lại')
-        self._notify('error', 'Tự động hóa đã dừng', message or 'Không hoàn tất tác vụ.')
+        self.batch.record_error(message)
+        skip=self.batch.can_skip(message)
+        retry=skip and self.batch.current and self.batch.current.get('can_retry') and self.batch.current.get('retries',0)<1
+        if self.stage!='uploading' and not retry:
+            try:
+                self.batch.save_failure(message)
+            except Exception:
+                skip=False
+                message='Không lưu được link lỗi vào lịch sử. '+message
+        if not skip:
+            self.armed_prompt_id = None
+            self.store.set_active(None)
+        self._release('Đã bỏ qua video lỗi • Tiếp tục hàng đợi' if skip else 'Đã dừng do lỗi • Kiểm tra tác vụ trước khi bật lại')
+        self._notify('error', 'Video lỗi' if skip else 'Tự động hóa đã dừng', message or 'Không hoàn tất tác vụ.')
 
     @Slot()
     def _cancelled(self):

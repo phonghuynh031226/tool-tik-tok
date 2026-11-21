@@ -105,7 +105,8 @@ def test_restore_original():
         )
     )
     assert state.title == "Tiêu đề AI mới toanh"
-    assert state.description == "Mô tả AI mới toanh"
+    assert state.description == "Mô tả AI mới toanh\n\n#short #viral"
+    assert state.upload_description() == state.description
 
     # User clicks restore original
     state.restore_original()

@@ -144,9 +144,9 @@ class HistoryPage(QWidget):
         self.combo_status = QComboBox(self)
         for text, key in [('Tất cả', 'all'), ('Chờ công khai', 'waiting'),
                           ('Đã công khai', 'public'), ('Lỗi', 'failed')]:
-            self.combo_status.addItem(text, key)
+            _i18n.add_item(self.combo_status, text, key)
         self.combo_status.currentIndexChanged.connect(self.refresh_history)
-        self.combo_status.hide()
+        header.insertWidget(1,self.combo_status)
 
         self.prog_sync = QProgressBar(self)
         self.prog_sync.setRange(0, 0)
@@ -235,10 +235,11 @@ class HistoryPage(QWidget):
     def refresh_history(self) -> None:
         query = self.input_search.text().strip()
         try:
-            records = self.services.history.search(query) if query else self.services.history.list()
+            records = (self.services.history.list(limit=1000,status=JobStatus.FAILED) if self.combo_status.currentData()=='failed' and not query else
+                       self.services.history.search(query) if query else self.services.history.list())
         except Exception:
             records = []
-        records = [dict(record) for record in records]
+        records = [dict(record) for record in records if not record.get('retry_resolved')]
         for record in records:
             if record.get('dry_run') is True or any(str(record.get(key) or '').startswith('dry-run')
                                                    for key in ('video_id', 'youtube_video_id')):
@@ -282,6 +283,8 @@ class HistoryPage(QWidget):
                 item = QTableWidgetItem(text)
                 if column == 0:
                     item.setToolTip(title)
+                if column==3 and record.get('error_message'):
+                    item.setToolTip(record['error_message'])
                 self.table.setItem(row, column, item)
             self.table.setCellWidget(row, 3, StatusBadge(status=status, badge_type=kind))
             action = QWidget(self.table)
@@ -290,7 +293,12 @@ class HistoryPage(QWidget):
             bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
             video_id = record.get('youtube_video_id')
             import re
-            if self._status(record) != 'DRY_RUN' and re.fullmatch(r'[A-Za-z0-9_-]{11}', str(video_id or '')):
+            if self._status(record)=='FAILED' and record.get('url') and not video_id:
+                button=_i18n.ui(AppButton('Chạy lại',variant='danger',icon_name='refresh',parent=action))
+                button.setToolTip(record.get('error_message') or '')
+                button.clicked.connect(lambda _checked=False,rec=dict(record): self._retry_failed(rec))
+                bar.addWidget(button)
+            elif self._status(record) != 'DRY_RUN' and re.fullmatch(r'[A-Za-z0-9_-]{11}', str(video_id or '')):
                 url = 'https://www.youtube.com/watch?v=' + video_id
                 button = _i18n.ui(AppButton('Mở', variant='secondary', icon_name='link', parent=action))
                 button.setFixedHeight(32)
@@ -314,6 +322,33 @@ class HistoryPage(QWidget):
             folder = resolve_download_directory(saved_dir)
             folder.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+    def _retry_failed(self, record):
+        controller=getattr(self.window(),'automation',None)
+        if controller is None:
+            self._resume_job(record)
+            return
+        if controller.busy or controller.batch.active:
+            self._notify('warning','Chưa chạy lại','Chờ hàng đợi hiện tại hoàn tất hoặc dừng hàng đợi trước.')
+            return
+        if not controller.armed_prompt_id:
+            self._notify('warning','Chưa chạy lại','Bật prompt tự động hóa trước khi chạy lại link lỗi.')
+            self.navigate_requested.emit(5)
+            return
+        if record.get('channel_id') and controller.channel_id!=record['channel_id']:
+            self._notify('warning','Chưa chạy lại','Chọn đúng kênh của video lỗi trước khi chạy lại.')
+            return
+        from app.services.tiktok.url import validate_url
+        try:
+            url=validate_url(record['url'])
+        except Exception:
+            self._notify('error','Không thể chạy lại','Link nguồn không hợp lệ.')
+            return
+        page=controller.page
+        page.batch_panel.mode.setCurrentIndex(0)
+        page.input_url.setText(url)
+        self.navigate_requested.emit(0)
+        controller.consider_text(url)
 
     def _resume_job(self, rec: dict) -> None:
         self.state.load_from_record(rec)

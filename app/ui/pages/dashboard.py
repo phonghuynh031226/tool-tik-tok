@@ -260,6 +260,9 @@ class DashboardPage(QWidget):
         self.btn_download.clicked.connect(self._on_download_clicked)
         url_row.addWidget(self.btn_download)
 
+        from app.ui.batch_queue import BatchPanel
+        self.batch_panel = BatchPanel(self.step1_card)
+        s1_layout.addWidget(self.batch_panel)
         s1_layout.addLayout(url_row)
 
         # Download Progress and cancel

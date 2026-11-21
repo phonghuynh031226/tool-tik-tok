@@ -162,7 +162,7 @@ class JobState(QObject):
         logger.info('content_generated — nội dung sẵn sàng xem và sửa')
         self._content = content
         self._title = content.title
-        self._description = content.description
+        self._description = self._with_hashtags(content.description, content.hashtags)
         self._hashtags = list(content.hashtags)
         self._tags = list(content.tags)
         self._status = JobStatus.CONTENT_READY
@@ -314,9 +314,19 @@ class JobState(QObject):
             return False, error.user_message
         return True, ""
 
+    @staticmethod
+    def _with_hashtags(description, hashtags):
+        import re
+        seen={tag.casefold() for tag in re.findall(r'#[^\s#]+', description)}
+        missing=[]
+        for tag in format_hashtags(hashtags).split():
+            if tag.casefold() not in seen:
+                missing.append(tag)
+                seen.add(tag.casefold())
+        return description.strip() + ('\n\n'+' '.join(missing) if missing else '')
+
     def upload_description(self) -> str:
-        hashtags = format_hashtags(self._hashtags)
-        return self._description.strip() + ('\n\n' + hashtags if hashtags else '')
+        return self._with_hashtags(self._description, self._hashtags)
 
     @property
     def publish_at(self) -> Optional[datetime]:
@@ -445,4 +455,3 @@ class JobState(QObject):
         self.upload_changed.emit(None)
         self.status_changed.emit(self._status.value)
         self.job_changed.emit()
-

@@ -527,3 +527,15 @@ ENGLISH.update({
     'Hãy kết nối tài khoản để bắt đầu quản lý và đăng tải video.': 'Connect an account to manage and upload videos.',
     'Đang tải video…': 'Loading videos…', 'Video · {0}': 'Videos · {0}',
 })
+
+ENGLISH.update({
+    'Một link':'Single link', 'Nhiều link':'Multiple links',
+    'Dán link TikTok, mỗi link một dòng…':'Paste TikTok links, one per line…',
+    'Dán danh sách':'Paste links', 'Bắt đầu':'Start', 'Tạm dừng sau video này':'Pause after this video',
+    'Dừng hàng đợi':'Stop queue', 'Thử lại link lỗi':'Retry failed links', 'Tiếp tục':'Resume',
+    'Link':'Link', 'Chờ':'Waiting', 'Trùng link':'Duplicate', 'Link không hợp lệ':'Invalid link',
+    'Đã xử lý':'Processed', 'Đã dừng':'Stopped',
+    'Đã xử lý {0}/{1} · Trùng {2} · Không hợp lệ {3}':'Processed {0}/{1} · Duplicates {2} · Invalid {3}',
+})
+
+ENGLISH.update({'Chạy lại':'Retry','Lý do':'Reason','Video lỗi':'Video failed','Chưa chạy lại':'Cannot retry yet'})
